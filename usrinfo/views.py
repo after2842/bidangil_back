@@ -16,10 +16,12 @@ import random
 from django.utils import timezone
 import trackingmore
 from datetime import datetime
+from .tasks import process_websearch_task
 from .helpers.exchange_rate import get_exchange_rate
 from .webhooks.stripewebhook import handle_stripe_webhook
+from .webhooks.trackingwebhook import karrio_webhook
 from django.conf import settings
-
+import requests
 @api_view(["GET"])
 def get_csrf_token(request):
     """
@@ -69,7 +71,8 @@ def send_verification_code(request):
 
         )
         return JsonResponse({'msg':'success'}, status= 200)
-    except:
+    except Exception as e:
+        print(e)
         return JsonResponse({'msg':'wrong'}, status= 500)
 
 
@@ -204,9 +207,13 @@ def create_inprogress_order(request):   #api/submit_order/
 
     combined_address = f"{data['address']['addressLine1']}\n{data['address']['addressLine2']}\n{data['address']['city']}\n{data['address']['state']}\n{data['address']['zip']} "
     print(f"CombinedAddress\n{combined_address}")
+    name = data['address']['name']
+    phone = data['address']['phone']
     order =  InProgressOrder.objects.create(
         user=user,
         address = combined_address,
+        name = name,
+        phone = phone,
         exchange_rate = get_exchange_rate()
         )
     # allorders = InProgressOrder.objects.all()
@@ -214,11 +221,15 @@ def create_inprogress_order(request):   #api/submit_order/
     #     print(f"singleorder {singleorder.order_created_at}\n {singleorder.user}\n {singleorder.address}")
 
     for item in data['orders']:
-        InProgressOrderItem.objects.create(
+
+        order_item = InProgressOrderItem.objects.create(
             order=order,
-            url=item['storeUrl'],
-            description = item['productOptions'],
+            url=item['url'],
+            description = item['desc'],
+            
+            
         )
+        process_websearch_task.delay(obj_id = order_item.id, url = item['url'])
     print(order.id)
     # allItemperorder = InProgressOrderItem.objects.all()
     # for singleitem in allItemperorder:
@@ -243,9 +254,10 @@ def get_profile_info(request):
                 'item_price': float(payment_info.item_price) if payment_info.item_price is not None else None,
                 'delivery_price': float(payment_info.delivery_fee) if payment_info.delivery_fee is not None else None,
                 'total_price': float(payment_info.total_fee) if payment_info.total_fee is not None else None,
-                'is_paid': payment_info.is_paid,
-                'invoice_created_at': str(payment_info.invoice_created_at) if payment_info.invoice_created_at else None,
-                'payment_url': str(payment_info.stripe_url) if payment_info.stripe_url else None,
+                'item_is_paid': payment_info.item_is_paid,
+                'delivery_is_paid':payment_info.delivery_is_paid,
+                'stripe_item_url': str(payment_info.stripe_item_url) if payment_info.stripe_item_url else None,
+                'stripe_delivery_url':str(payment_info.stripe_delivery_url) if payment_info.stripe_delivery_url else None,
                 }
             except Payment.DoesNotExist:
                 payment_data = None
@@ -266,10 +278,11 @@ def get_profile_info(request):
                 steps_data = [
                     {'label': '주문 접수 완료', 'isDone': steps_info.request_received},
                     {'label': '물건 구매 완료', 'isDone': steps_info.item_purchased},
-                    {'label': '물건 도착', 'isDone': steps_info.item_received},
-                    {'label': '구매/배송비 결제 완료', 'isDone': steps_info.payment_received},
+                    {'label': '물건 도착', 'isDone': steps_info.delivery_ready},
                     {'label': '배송 시작', 'isDone':steps_info.delivery_started},
+                    {'label': '배송 완료', 'isDone':steps_info.delivery_completed},
                 ]
+
             except InProgressOrderSteps.DoesNotExist:
                 steps_data = None
 
@@ -327,37 +340,37 @@ def move_to_past_order(inprogress_order_id):
 
     return past_order
 
+# @csrf_exempt
+# @api_view(["POST"])
+# def get_tracking_status(request): #call when user click the userprofile
+#     karrio_webhook(request)
+#     trackingmore.api_key = '56r7vls8-an4v-octa-i1sc-bhtgqbryhuwl'
 
+#     tracking_history = []
+#     try:
 
-def get_tracking_status(tracking_number = '771809733171'): #call when user click the userprofile
+#         params = {'tracking_numbers': f"{tracking_number}", 'courier_code': 'fedex'}
+#         tracking_status = trackingmore.tracking.get_tracking_results(params)
 
-    trackingmore.api_key = '56r7vls8-an4v-octa-i1sc-bhtgqbryhuwl'
+#         tracking_data = tracking_status['data'][0]['origin_info']['trackinfo']
+#         trackinfo_sorted = sorted(tracking_data, key=lambda x: datetime.fromisoformat(x['checkpoint_date']))
 
-    tracking_history = []
-    try:
-
-        params = {'tracking_numbers': f"{tracking_number}", 'courier_code': 'fedex'}
-        tracking_status = trackingmore.tracking.get_tracking_results(params)
-
-        tracking_data = tracking_status['data'][0]['origin_info']['trackinfo']
-        trackinfo_sorted = sorted(tracking_data, key=lambda x: datetime.fromisoformat(x['checkpoint_date']))
-
-        for i, status in enumerate(trackinfo_sorted):
-            tracking_checkpoint = {
-                'date':status.get('checkpoint_date'),
-                'status' : status.get('checkpoint_delivery_status'),
-                'location' : status.get('location')
-            }
-            print(f"{i+1}th update: \n DATE: {tracking_checkpoint['date']}\n STATUS:{tracking_checkpoint['status']}\n LOCATION:{tracking_checkpoint['location']}")
-            tracking_history.append(tracking_checkpoint)
-        return tracking_history
+#         for i, status in enumerate(trackinfo_sorted):
+#             tracking_checkpoint = {
+#                 'date':status.get('checkpoint_date'),
+#                 'status' : status.get('checkpoint_delivery_status'),
+#                 'location' : status.get('location')
+#             }
+#             print(f"{i+1}th update: \n DATE: {tracking_checkpoint['date']}\n STATUS:{tracking_checkpoint['status']}\n LOCATION:{tracking_checkpoint['location']}")
+#             tracking_history.append(tracking_checkpoint)
+#         return tracking_history
 
            
 
-    except trackingmore.exception.TrackingMoreException as ce:
-        print(ce)
-    except Exception as e:
-        print("other error:", e) 
+#     except trackingmore.exception.TrackingMoreException as ce:
+#         print(ce)
+#     except Exception as e:
+#         print("other error:", e) 
 
 
     
@@ -367,33 +380,66 @@ def stripe_webhook_view(request):
     response = handle_stripe_webhook(request=request)
     session_id = response['id']
     did_pay = response['did_pay']
+    payment_type = response['type']
 
     if did_pay:
         try:
-            user_payment_object = Payment.objects.filter(stripe_id = session_id)
-            user_payment_object.is_paid = True
-            user_payment_object.save()
-            steps = InProgressOrderSteps.objects.get(order = user_payment_object.order)
-            steps.payment_received = True
-            steps.save()
+            if payment_type == 'delivery':
+                #find the corresponding Payment object
+                user_payment_object = Payment.objects.filter(stripe_delivery_id = session_id)
+                user_payment_object.delivery_fee_paid = True
+                user_payment_object.save()
 
+                #update the order step object
+                steps = InProgressOrderSteps.objects.get(order = user_payment_object.order)
+                steps.delivery_fee_paid = True
+                steps.save()
 
-            user_nickname =  Profile.objects.get(user = user_payment_object.order.user)
-            email = user_payment_object.order.user.username
+                user_nickname =  Profile.objects.get(user = user_payment_object.order.user)
+                email = user_payment_object.order.user.username
 
-            send_mail(
-                subject=f'비단길에서 알려드립니다. Order #{user_payment_object.order.id}',
-                message=(
-                    f'안녕하세요 {user_nickname}님 결제해주셔서 감사합니다,\n\n'
-                    f'고객님의 결제가 정상적으로 처리되었습니다.\n\n'
-                    f'곧 고객님의 물건이 발송될 예정이오니, 추후 안내 드리겠습니다..\n'
-                    f'상세한 주문 정보는 비단길 (웹사이트 -> 내 정보)에서 확인 가능합니다.'
-                    '비단길을 이용해주셔서 감사합니다'
-                ),
-                from_email=None,
-                recipient_list=[email],
-                fail_silently=False,
-            )
+                #send email
+                send_mail(
+                    subject=f'비단길에서 알려드립니다. Order #{user_payment_object.order.id}',
+                    message=(
+                        f'안녕하세요 {user_nickname}님 결제해주셔서 감사합니다,\n\n'
+                        f'고객님의 상품 결제가 정상적으로 처리되었습니다.\n\n'
+                        f'비단길에서 고객님의 상품을 대신 구매하여 배송을 준비할 예정입니다.\n'
+                        f'상세한 주문 정보는 비단길 (웹사이트 -> 내 정보)에서 확인 가능합니다.'
+                        '비단길을 이용해주셔서 감사합니다'
+                    ),
+                    from_email=None,
+                    recipient_list=[email],
+                    fail_silently=False,
+                )
+            elif payment_type == 'items':
+
+                #find corresponding Payment object with its id
+                user_payment_object = Payment.objects.filter(stripe_item_id = session_id)
+                user_payment_object.item_fee_paid = True
+                user_payment_object.save()
+
+                #update the order step (to show clients)
+                steps = InProgressOrderSteps.objects.get(order = user_payment_object.order)
+                steps.item_fee_paid = True
+                steps.save()
+
+                user_nickname =  Profile.objects.get(user = user_payment_object.order.user)
+                email = user_payment_object.order.user.username
+
+                send_mail(
+                    subject=f'비단길에서 알려드립니다. Order #{user_payment_object.order.id}',
+                    message=(
+                        f'안녕하세요 {user_nickname}님 결제해주셔서 감사합니다,\n\n'
+                        f'고객님의 결제가 정상적으로 처리되었습니다.\n\n'
+                        f'고객님의 물건이 발송될 예정입니다. 곧 배송 정보와 함께 연락드리겠습니다! \n'
+                        f'상세한 주문 정보는 비단길 (웹사이트 -> 내 정보)에서 확인 가능합니다.'
+                        '비단길을 이용해주셔서 감사합니다'
+                    ),
+                    from_email=None,
+                    recipient_list=[email],
+                    fail_silently=False,
+                )
             print('payment successful!')
         except Exception as e:
             print(e)
@@ -403,9 +449,36 @@ def stripe_webhook_view(request):
 
 
 
+@api_view(["POST"])
+def validate_address(request):
+    print('inside validate address')
+    data = request.data
+    print('data',data)
 
+    addressLine1 = data['addressLine1']
+    addressLine2 = data['addressLine2']
+    city = data['city']
+    state = data['state']
+    zip =data['zip']
 
+    address_google = {'address':{
+        'regionCode':'US',
+        'addressLines':[addressLine1,addressLine2,city,state,zip]
+    }}
+    try:
+        response = requests.post(
+            url = f'https://addressvalidation.googleapis.com/v1:validateAddress?key={settings.GOOGLE_API}',
+            headers = {"Content-Type": "application/json"},
+            json = address_google
 
+        )
+        response.raise_for_status()
+
+        result_data = response.json()
+        print(json.dumps(result_data,indent=4))
+        return JsonResponse({'result':result_data},status =200)
+    except requests.exceptions.RequestException as e:
+        return JsonResponse({'result':str(e)}, status=400)
 
 
 

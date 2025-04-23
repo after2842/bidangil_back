@@ -10,6 +10,8 @@ class InProgressOrder(models.Model):
     order_created_at = models.DateTimeField(auto_now_add=True)
     address = models.TextField()
     exchange_rate = models.DecimalField(max_digits=10, decimal_places=2, default=None)
+    name = models.CharField(max_length=20, default='', null=True)
+    phone = models.CharField(max_length=12, default='', null=True)
 
 
     # any other overall fields for the entire order
@@ -26,6 +28,7 @@ class InProgressOrderItem(models.Model):
     url = models.URLField()
     description = models.TextField()
     price = models.DecimalField(max_digits=10, decimal_places=2, default=0, blank=True)
+    gpt_product_name = models.CharField(max_length=50,null=True, blank=True)
 
 
     def __str__(self):
@@ -38,10 +41,15 @@ class InProgressOrderSteps(models.Model):
         related_name='steps'
     )
     request_received = models.BooleanField(default=False)
-    item_purchased = models.BooleanField(default=False)
-    item_received = models.BooleanField(default=False)
-    payment_received = models.BooleanField(default=False)
-    delivery_started= models.BooleanField(default=False)
+
+    item_fee_paid = models.BooleanField(default=False)
+    item_purchased = models.BooleanField(default=False) #manually....
+
+    delivery_ready = models.BooleanField(default=False) 
+    delivery_fee_paid = models.BooleanField(default=False)
+
+    delivery_started = models.BooleanField(default=False) # when tracking number in hand
+    delivery_completed= models.BooleanField(default=False) # when the items are at customer's front door
 
 
 class PastOrder(models.Model):
@@ -82,6 +90,7 @@ class Payment(models.Model):
     order = models.OneToOneField(
         InProgressOrder, 
         on_delete=models.CASCADE, 
+
         related_name='payment',
         null=True,  # Allow database to store NULL
         blank=True  # Allow forms to leave it blank
@@ -95,13 +104,20 @@ class Payment(models.Model):
     total_fee = models.DecimalField(max_digits=10, decimal_places=2,null=True,blank=True)
 
 
-    stripe_url = models.URLField(null=True, blank=True)
-    stripe_id = models.CharField(max_length=100,null=True, blank=True)
-    is_paid = models.BooleanField(default=False)
-    invoice_created_at = models.DateTimeField(null=True, blank=True)
+    stripe_item_url = models.URLField(null=True, blank=True)
+    stripe_item_id = models.CharField(max_length=200,null=True, blank=True)
+
+    stripe_delivery_url = models.URLField(null=True, blank=True)
+    stripe_delivery_id = models.CharField(max_length=200,null=True, blank=True)
+
+    item_is_paid = models.BooleanField(default=False)
+    delivery_is_paid= models.BooleanField(default=False)
+
+    item_invoice_created_at = models.DateTimeField(null=True, blank=True)
+    delivery_invoice_created_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
-        return f"Payment: {self.order.user.username} - {'Paid' if self.is_paid else 'Unpaid'}"
+        return f"Payment: {self.order.user.username} "
 
 class Delivery(models.Model):
     COURIER_CHOICES = [
@@ -118,9 +134,13 @@ class Delivery(models.Model):
     )
     delivery_start_at = models.DateTimeField(auto_now_add=True)
     delivered_at = models.DateTimeField(null=True, default=None)
-    courier = models.CharField(max_length=10, choices = COURIER_CHOICES, default=None)
-    tracking_number = models.CharField(max_length=20, default=None)
+    courier = models.CharField(max_length=10, choices = COURIER_CHOICES, default=None, blank=True)
+    tracking_number = models.CharField(max_length=50, blank=True, default=None)
 
+class DeliveryStatus(models.Model):
+    delivery = models.ForeignKey(Delivery, on_delete=models.CASCADE, related_name = 'tracking')
+    status = models.CharField(max_length=20, blank=True, default=None)
+    timestamp = models.DateTimeField(auto_now=True)
 
 
 class Profile(models.Model):
@@ -142,3 +162,6 @@ class EmailVerification(models.Model):
     
     def is_expired(self):
         return self.created_at < (timezone.now() - timedelta(minutes=10))
+    
+class Foo(models.Model):
+    name = models.CharField(max_length=50)

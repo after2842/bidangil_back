@@ -20,6 +20,8 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 # Then it verifies whether the Masked token is dervied from Masked token
 # webhook: whsec_BYfhBcSfSZQryHAiTMuAFj1kD6aKTB9p
 from pathlib import Path
+from celery.schedules import crontab
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -34,7 +36,8 @@ STRIPE_API = 'sk_test_51PtQWTC3qQke2faEEEdPwXssf654tANvprDWICGuZs8q4CO5f77uxwPSN
 # SECURITY WARNING: don't run with debug turned on in production!
 STRPIE_WEBHOOK_SEC = 'whsec_BYfhBcSfSZQryHAiTMuAFj1kD6aKTB9p'
 DEBUG = True
-
+GOOGLE_API= 'AIzaSyBDIYy1cEoJIzN4VacqPuC8pV66I1wjVzg'
+GPT_SECRET = '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'
 ALLOWED_HOSTS = ['54.176.252.155','localhost', '127.0.0.1', 'bidangil.co']
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
@@ -44,6 +47,7 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = 'samuel.choi@atozservice.net'
 
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
 
 # Application definition
 
@@ -164,3 +168,29 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+#Celery configurations
+
+# Broker / results
+CELERY_BROKER_URL = "redis://127.0.0.1:6379/0"
+CELERY_RESULT_BACKEND = "redis://127.0.0.1:6379/1"
+
+# Time & reliability
+CELERY_TIMEZONE = "UTC"           # inherits Django TIME_ZONE if omitted
+CELERY_TASK_ACKS_LATE = True      # ack only *after* the task finishes
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_TASK_TIME_LIMIT = 300
+
+# put all delivery_update jobs on a separate queue
+CELERY_TASK_DEFAULT_QUEUE = "default"
+CELERY_TASK_QUEUES = {
+    "delivery_update": {"routing_key": "delivery_update"},
+}
+
+CELERY_BEAT_SCHEDULE = {
+    "greet-every-2h": {
+        "task": "usrinfo.tasks.run_and_update",
+        "schedule": crontab(minute='*', hour='*'),  
+        "options": {"queue": "delivery_update"},
+    },
+}

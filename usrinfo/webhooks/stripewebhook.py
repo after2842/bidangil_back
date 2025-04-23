@@ -32,7 +32,8 @@ def handle_stripe_webhook(request):
         if event['type'] == "checkout.session.completed":
             session = event["data"]["object"]  
             session_id = session['id']
-            return {'did_pay': True, 'id': session_id}
+            payment_type = session['metadata']['payment_type']
+            return {'did_pay': True, 'id': session_id, 'type': payment_type}
         
         elif event['type'] == "checkout.session.expired":
             print('expired')

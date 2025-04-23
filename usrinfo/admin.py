@@ -6,19 +6,96 @@ from .models import (
     Profile, EmailVerification, InProgressOrderSteps
 )
 from django.db.models import Sum
-
+from django.utils.html import format_html
 
 class InProgressOrderItemInline(admin.TabularInline):  # or admin.StackedInline
     model = InProgressOrderItem
     extra = 0  # Don't show extra blank rows
-    fields = ('url', 'description', 'price')  # only show these fields
-    readonly_fields = ('url', 'description')  # optional if you want read-only
+    fields = ('url_truncated', 'description', 'price', 'gpt_product_name')  # only show these fields
+    readonly_fields = ('url_truncated', 'description')  # optional if you want read-only
+
+    def url_truncated(self, obj):
+        if obj.url:
+            return format_html(
+                '''
+                <a href="{0}" target="_blank" style="color:blue; text-decoration:underline; onmouseover="this.style.color='gray'" onmouseout="this.style.color='blue'">
+                    {1}... (열기)
+                </a>
+                ''',
+                obj.url,
+                obj.url[:30]
+            )
+        return "-"
 
 class InProgressPaymentInline(admin.TabularInline):  # or admin.StackedInline
     model = Payment
-    extra = 0  # Don't show extra blank rows
-    fields = ('item_price', 'delivery_fee','total_fee', 'is_paid','invoice_created_at')  # only show these fields
-    readonly_fields = ('item_price', 'total_fee', 'invoice_created_at','is_paid')  # optional if you want read-only
+    extra = 1  # Don't show extra blank rows∂
+    fields = ('item_price', 'delivery_fee', 'total_fee',
+        'stripe_item_url_c', 'stripe_delivery_url_c',
+        'stripe_item_id_c', 'stripe_delivery_id_c',
+        'item_is_paid', 'delivery_is_paid',
+        'item_invoice_created_at', 'delivery_invoice_created_at')  # only show these fields
+    readonly_fields = ('item_price', 'total_fee',
+        'stripe_item_url_c', 'stripe_delivery_url_c',
+        'stripe_item_id_c', 'stripe_delivery_id_c',
+        'item_is_paid', 'delivery_is_paid',
+        'item_invoice_created_at', 'delivery_invoice_created_at') 
+        
+    def stripe_item_url_c(self, obj):
+        if obj.stripe_item_url:
+            return format_html(
+                '''
+                <span style="cursor:pointer; color:blue;" onclick="navigator.clipboard.writeText('{}')">
+                    {}... (복사)
+                </span>
+                ''',
+                obj.stripe_item_url,
+                obj.stripe_item_url[:30]
+            )
+        return "-"
+
+    def stripe_delivery_url_c(self, obj):
+        if obj.stripe_delivery_url:
+            return format_html(
+                '''
+                <span style="cursor:pointer; color:blue;" onclick="navigator.clipboard.writeText('{}')">
+                    {}... (복사)
+                </span>
+                ''',
+                obj.stripe_delivery_url,
+                obj.stripe_delivery_url[:30]
+            )
+        return "-"
+
+    def stripe_item_id_c(self, obj):
+        if obj.stripe_item_id:
+            return format_html(
+                '''
+                <span style="cursor:pointer; color:blue;" onclick="navigator.clipboard.writeText('{}')">
+                    {}... (복사)
+                </span>
+                ''',
+                obj.stripe_item_id,
+                obj.stripe_item_id[:10]
+            )
+        return "-"
+
+    def stripe_delivery_id_c(self, obj):
+        if obj.stripe_delivery_id:
+            return format_html(
+                '''
+                <span style="cursor:pointer; color:blue;" onclick="navigator.clipboard.writeText('{}')">
+                    {}... (복사)
+                </span>
+                ''',
+                obj.stripe_delivery_id,
+                obj.stripe_delivery_id[:10]
+            )
+        return "-"
+    
+    
+
+ # optional if you want read-only
 
 class InProgressDeliveryInline(admin.TabularInline):  # or admin.StackedInline
     model = Delivery
@@ -29,15 +106,20 @@ class InProgressDeliveryInline(admin.TabularInline):  # or admin.StackedInline
 class InProgressOrderStepsInline(admin.TabularInline):
     model = InProgressOrderSteps
     extra = 0
-    fields = ('request_received', 'item_purchased','item_received','payment_received','delivery_started')
-    readonly_fields = ('request_received', 'item_purchased','item_received','payment_received','delivery_started')
+    fields = ('request_received', 'item_fee_paid','item_purchased','delivery_ready','delivery_fee_paid','delivery_started','delivery_completed')
+    readonly_fields = ('request_received', 'item_fee_paid','delivery_ready','delivery_fee_paid','delivery_started','delivery_completed')
 
 @admin.register(InProgressOrder)
 class InProgressOrderAdmin(admin.ModelAdmin):
     list_display = ('id', 'user', 'order_created_at', 'exchange_rate')
     readonly_fields = ('user', 'exchange_rate','address') 
     inlines = [InProgressOrderItemInline, InProgressPaymentInline, InProgressDeliveryInline,InProgressOrderStepsInline]
-
+    # The reason why I override the save_formet,
+    # I want to create a new Payment Object, when EVERY InProgressOrderItem are saved.
+    # However, the receiver in signals.py won't wait untill the iteration of InProgressOrderItem.save() is finished'
+    # So, I had to modify save_format:
+    # First, when django call save_formset for formset.model == InProgressOrderItem, I want it to save every instances
+    # Then, I will create a Payment object after all instances are saved for formset.model == InProgressOrderItem
     def save_formset(self, request, form, formset, change):
         """
         This method is called after all inlines have been validated & saved.
@@ -57,22 +139,25 @@ class InProgressOrderAdmin(admin.ModelAdmin):
         for deleted_obj in formset.deleted_objects:
             deleted_obj.delete()
 
+        
+
+
         # Only do summation if it's the InProgressOrderItem inline
         if formset.model == InProgressOrderItem:
             # If NO objects changed or were added, skip summation
             if not instances and not formset.deleted_objects:
                 # means no real changes to InProgressOrderItem
-                super().save_formset(request, form, formset, change)
+                super().save_formset(request, form, formset, change) #even though I've called obj.save() above. django still expects super()
                 return
 
             # Otherwise, do summation
             inprogress_order = form.instance
-            total_item_price = inprogress_order.items.aggregate(total=Sum('price'))['total'] or 0
+            # total_item_price = inprogress_order.items.aggregate(total=Sum('price'))['total'] or 0
 
-            # You can do create if you want only 1 Payment object:
-            payment= Payment.objects.create(order=inprogress_order)
-            payment.item_price = total_item_price
-            payment.save()
+            # Create the Payment object ONCE: after all InProgressOrderItems.price are updated
+            Payment.objects.create(order=inprogress_order)
+            #payment.item_price = total_item_price
+            # payment.save()
 
         # Finally, call super so Django can finish up
         super().save_formset(request, form, formset, change)

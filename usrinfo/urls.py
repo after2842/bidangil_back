@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.urls import path, include
-from .views import  login_view, signup_view, send_verification_code, verify_code,create_inprogress_order, get_csrf_token,get_profile_info,logout_view,stripe_webhook_view
+from .views import  login_view, signup_view, send_verification_code, verify_code,create_inprogress_order, get_csrf_token,get_profile_info,logout_view,stripe_webhook_view,validate_address
 
 urlpatterns = [
     path("api/csrf_token/", get_csrf_token),
@@ -10,6 +10,8 @@ urlpatterns = [
     path('api/send_code/',send_verification_code),
     path('api/verify_code/',verify_code),
     path('api/submit_order/',create_inprogress_order),
-    path('api/profile_info/', get_profile_info),
-    path('webhook/stripe_payment', stripe_webhook_view)
+    path('api/profile_info/', get_profile_info),    
+    path('api/validate_address/', validate_address),
+    path('webhook/stripe_payment', stripe_webhook_view),
+
 ]
