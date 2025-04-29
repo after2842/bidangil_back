@@ -109,51 +109,18 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 
-# [
-#     {
-#     'address': 'some address',
-#      'created_at': 'Whenever it was created',
-#      'exchange_rate': 'somenumber',
-#      'items':[{'url':'someurl', 'description': 'some description'},
-#               {'url':'someurl', 'description': 'some description'},
-#               {'url':'someurl', 'description': 'some description'}
-#               ],
-#      'Payment':{
-#         'item_price': 'someprice',
-#         'Delivery_price': 'some delivery price',
-#         'total_price':'some total price',
-#         'ispaid':'true or false',
-#         'invoice_created':'when user paid through stripe zelle or whatever',
+# serializers.py
 
-#      }
-#      'Delivery':{
-#          'delivery_start_at':'some day ',
-#          'tracking_number':'some number tracking',
-#          'courier':'courier',
-#      }
-#      },
-#          {
-#     'address': 'some address',
-#      'created_at': 'Whenever it was created',
-#      'exchange_rate': 'somenumber',
-#     'items':[{'url':'someurl', 'description': 'some description'},
-#         {'url':'someurl', 'description': 'some description'},
-#         {'url':'someurl', 'description': 'some description'}
-#         ],
-#      'Payment':{
-#         'item_price': 'someprice',
-#         'Delivery_price': 'some delivery price',
-#         'total_price':'some total price',
-#         'ispaid':'true or false',
-#         'invoice_created':'when user paid through stripe zelle or whatever',
+from .models import Post, PostImage
 
-#      }
-#      'Delivery':{
-#          'delivery_start_at':'some day ',
-#          'tracking_number':'some number tracking',
-#          'courier':'courier',
-#      }
-#      },
-     
-     
-# ]
+class PostImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = PostImage
+        fields = ["image_url"]
+
+class ReviewSerializer(serializers.ModelSerializer):
+    images = PostImageSerializer(source="post_images", many=True)  #nested inline(child) model
+
+    class Meta:
+        model  = Post
+        fields = ["id", "user", "title", "content", "created_at", "images", 'avatar', 'nickname']

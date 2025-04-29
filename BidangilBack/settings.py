@@ -47,7 +47,8 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = 'samuel.choi@atozservice.net'
 
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-
+AWS_ACCESS_KEY_ID='AKIASVLKCS3CP3DWUM4Q'
+AWS_SECRET_ACCESS_KEY = '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'
 
 # Application definition
 
@@ -60,8 +61,11 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'usrinfo.apps.UsrinfoConfig',
     'corsheaders',
+    "channels",
 
 ]
+ASGI_APPLICATION = "BidangilBack.asgi.application"
+
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',    
@@ -190,7 +194,16 @@ CELERY_TASK_QUEUES = {
 CELERY_BEAT_SCHEDULE = {
     "greet-every-2h": {
         "task": "usrinfo.tasks.run_and_update",
-        "schedule": crontab(minute='*', hour='*'),  
+        "schedule": crontab(minute='*', hour='*/2'),  
         "options": {"queue": "delivery_update"},
+    },
+}
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("127.0.0.1", 6379)],  
+        },
     },
 }

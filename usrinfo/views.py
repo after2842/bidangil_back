@@ -7,21 +7,25 @@ from rest_framework.permissions import IsAuthenticated
 import json
 from django.contrib.auth import authenticate, login, logout
 from django.middleware.csrf import get_token
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, parser_classes
 # from .serializers import 
 from django.contrib.auth.models import User
-from .models import Profile, EmailVerification,InProgressOrder,InProgressOrderItem, PastOrder, PastOrderItem, Payment, Delivery, InProgressOrderSteps
+from .models import Profile, EmailVerification,InProgressOrder,InProgressOrderItem, PastOrder, PastOrderItem, Payment, Delivery, InProgressOrderSteps, Post, PostImage
 from django.core.mail import send_mail
 import random
 from django.utils import timezone
 import trackingmore
 from datetime import datetime
-from .tasks import process_websearch_task
+from .tasks import process_websearch_task, generate_avatar
 from .helpers.exchange_rate import get_exchange_rate
+from .helpers.s3 import upload_png
 from .webhooks.stripewebhook import handle_stripe_webhook
 from .webhooks.trackingwebhook import karrio_webhook
 from django.conf import settings
+from rest_framework.parsers import MultiPartParser, FormParser
 import requests
+from .serializers import ReviewSerializer
+
 @api_view(["GET"])
 def get_csrf_token(request):
     """
@@ -229,7 +233,9 @@ def create_inprogress_order(request):   #api/submit_order/
             
             
         )
+        print('process websearch!')
         process_websearch_task.delay(obj_id = order_item.id, url = item['url'])
+        print('process websearch2!')
     print(order.id)
     # allItemperorder = InProgressOrderItem.objects.all()
     # for singleitem in allItemperorder:
@@ -483,5 +489,136 @@ def validate_address(request):
 
 
 
+@permission_classes([IsAuthenticated])
+@api_view(["POST"])
+def store_new_avatar(request):
+    data = request.data
+    print('data', data)
+
+    personality= ','.join(data['personality'])
+    species = data['species']
 
 
+    prompt = f'''Draw a cute little chibi character. You must not include text in the image.
+    species: {species}\n
+    personality:{personality}\n 
+    '''
+    print('delay()')
+    generate_avatar.delay(prompt, request.user.id)
+    print('deplay() is completed')
+
+    return JsonResponse({"msg": 'success'},status=200)
+
+
+
+
+@permission_classes([IsAuthenticated])
+@api_view(["GET"])
+def community_profile(request):
+    print('inside get profile info')
+    try:
+        user = request.user
+        print(user.username)
+        usr_profile = Profile.objects.get(user=user)
+
+        avatar_url = usr_profile.avatar
+        print('avatarurl...////',avatar_url)
+        return JsonResponse({'avatar': avatar_url}, status =200)
+
+    except Exception as e:
+        return JsonResponse({'err':str(e)}, status = 400)
+
+
+
+@permission_classes([IsAuthenticated])
+@api_view(["POST"])
+@parser_classes([MultiPartParser, FormParser])
+def post_new(request):
+    print('post new in herre!!!')
+    try:
+        print('1')
+        category = request.POST.get('category')
+        print('2')
+        title = request.POST.get('title')
+        print('3')
+        content = request.POST.get('content')
+        print('title',title)
+
+        uploaded_files = request.FILES #request.FILES is an dict of UploadedFile object
+        print('4')
+        urls=[]
+
+        for key, obj in uploaded_files.items():#to extract raw byte to send to s3
+            print('here!')
+            file_byte = obj.read()
+            content_type = obj.content_type
+            print(content_type,'contenttype')
+            extention = ''
+
+            if content_type == 'image/png': # for browsers and servers
+                extention='png' # for humans and os to recognize the file type
+            elif content_type == 'image/jpeg':
+                extention = 'jpeg'
+            elif content_type=='image/jpg':
+                extention = 'jpg'
+            else:
+                raise Exception('unsupported file format!')
+            url = upload_png(file_byte, folder='posts', extention = extention, content_type=content_type)
+            urls.append(url)
+        print('5')
+        user = request.user
+        post = Post.objects.create(user=user)
+        profile = Profile.objects.get(user=user)
+        nickname =profile.nickname
+        avatar = profile.avatar
+
+        post.title = title
+        post.category = category
+        post.content=content
+        post.nickname = nickname
+        post.avatar = avatar
+        post.save()
+        print('6')
+
+        for url in urls:
+            PostImage.objects.create(post = post, image_url = url )
+            print('url is here:', url)
+
+        return JsonResponse({'msg': 'new post created!'}, status =200)
+
+    except Exception as e:
+        return JsonResponse({'err':str(e)}, status = 400)
+    
+#@api_view(["GET"])
+def get_reviews(request):
+    print('//////inside get reviews')
+    try:
+        qs = Post.objects.filter(category="review").order_by("-created_at")  # newest first
+        #print('@@@@@test',qs[0].avatar. qs[0].category)
+        images_urls = []
+        print(f"len of qs{len(qs)}")
+
+        
+
+        page  = int(request.GET.get("page", 1))
+        size  = int(request.GET.get("size", 10))
+        start = (page - 1) * size
+        end   = start + size
+
+        total   = qs.count()
+        slice_q = qs[start:end]
+
+        data = ReviewSerializer(slice_q, many=True).data
+        has_next = end < total
+        
+
+        return JsonResponse({
+            "results":  data,
+            "page":     page,
+            "page_size": size,
+            "has_next": has_next,
+            "total":    total,
+        }, status =200)
+    except Exception as e:
+        print('e',e)
+    

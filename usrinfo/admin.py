@@ -3,7 +3,7 @@ from .models import (
     InProgressOrder, InProgressOrderItem,
     PastOrder, PastOrderItem,
     Payment, Delivery,
-    Profile, EmailVerification, InProgressOrderSteps
+    Profile, EmailVerification, InProgressOrderSteps, Post,PostImage
 )
 from django.db.models import Sum
 from django.utils.html import format_html
@@ -25,6 +25,7 @@ class InProgressOrderItemInline(admin.TabularInline):  # or admin.StackedInline
                 obj.url,
                 obj.url[:30]
             )
+
         return "-"
 
 class InProgressPaymentInline(admin.TabularInline):  # or admin.StackedInline
@@ -109,6 +110,12 @@ class InProgressOrderStepsInline(admin.TabularInline):
     fields = ('request_received', 'item_fee_paid','item_purchased','delivery_ready','delivery_fee_paid','delivery_started','delivery_completed')
     readonly_fields = ('request_received', 'item_fee_paid','delivery_ready','delivery_fee_paid','delivery_started','delivery_completed')
 
+class PostImagesInline(admin.TabularInline):
+    model = PostImage
+    extra = 0
+    fields = ['image_url']
+    readonly_fields = ['image_url']
+
 @admin.register(InProgressOrder)
 class InProgressOrderAdmin(admin.ModelAdmin):
     list_display = ('id', 'user', 'order_created_at', 'exchange_rate')
@@ -164,12 +171,18 @@ class InProgressOrderAdmin(admin.ModelAdmin):
 
 # admin.site.register(InProgressOrderItem)
 admin.site.register(PastOrder)
-admin.site.register(PastOrderItem)
-admin.site.register(Payment)
-admin.site.register(Delivery)
+admin.site.register(PostImage)
+# admin.site.register(Payment)
+# admin.site.register(Delivery)
 
 admin.site.register(Profile)
-admin.site.register(EmailVerification)
+# admin.site.register(Post)
+
+@admin.register(Post)
+class PostAdmin(admin.ModelAdmin):
+    list_display = ('user', 'category', 'title', 'content','avatar')
+    readonly_fields = ('user', 'category', 'title', 'content') 
+    inlines = [PostImagesInline]
 
 # when admin changes InProgressOrderItem's value, and hit save. django calls'
 # 'InProgressOrderAdmin.save_formset(

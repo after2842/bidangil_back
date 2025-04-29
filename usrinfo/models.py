@@ -32,7 +32,7 @@ class InProgressOrderItem(models.Model):
 
 
     def __str__(self):
-        return f"Item in Order #{self.order.id}: {self.url}"
+        return f""
 
 class InProgressOrderSteps(models.Model):
     order = models.OneToOneField(
@@ -149,11 +149,17 @@ class Profile(models.Model):
     phone_number = models.CharField(max_length=20, blank=True)
     signup_date = models.DateTimeField(auto_now_add=True)
     last_address = models.TextField(max_length=255, blank = True)
+    avatar = models.URLField(blank=True, default='https://bidangilimage.s3.us-west-1.amazonaws.com/profiles/basic_avatar.png')
 
     def __str__(self):
         return f"Name:{self.nickname} || Email:{self.user.username}"
-    
-    
+
+class Avatar(models.Model):
+    profile = models.OneToOneField(Profile, on_delete=models.CASCADE, related_name = 'avatars')
+    avatar_image_url = models.URLField(blank=True, default='https://bidangilimage.s3.us-west-1.amazonaws.com/profiles/basic_avatar.png')
+    address = models.CharField(max_length=100, blank=True)
+    likes = models.IntegerField(blank=True, default=0)
+
 class EmailVerification(models.Model):
     email = models.EmailField()
     code = models.IntegerField()
@@ -162,6 +168,19 @@ class EmailVerification(models.Model):
     
     def is_expired(self):
         return self.created_at < (timezone.now() - timedelta(minutes=10))
-    
+
+class Post(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='posts')
+    nickname = models.CharField(max_length=40, blank=True)
+    category = models.CharField(max_length=20, blank=True, default='')
+    title = models.TextField(blank=True)
+    content = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    avatar = models.URLField(blank=True, default='https://bidangilimage.s3.us-west-1.amazonaws.com/profiles/basic_avatar.png') #doesn't update once posted
+
+class PostImage(models.Model):
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='post_images')
+    image_url = models.URLField(blank=True, default='')
+
 class Foo(models.Model):
     name = models.CharField(max_length=50)

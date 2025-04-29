@@ -1,9 +1,16 @@
 from celery import shared_task
 from .helpers.gpt_helper import process_websearch 
 from .models import InProgressOrderItem
-from usrinfo.models import InProgressOrder, InProgressOrderSteps, Delivery, DeliveryStatus
+from usrinfo.models import InProgressOrder, InProgressOrderSteps, Delivery, DeliveryStatus, User, Profile, Avatar
 from django.utils import timezone
 from .helpers.delivery_status_update import get_fedex_status, get_secret_key
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
+from rest_framework.response import Response
+from .helpers.s3 import upload_png
+import base64, re
+from openai import OpenAI
+from django.conf import settings
 
 @shared_task
 def run_and_update():
@@ -48,4 +55,58 @@ def process_websearch_task(obj_id, url):
     order_item.save()
     print('gpt name saved')
 
+
+
+@shared_task
+def generate_avatar(prompt, user_id):
+    
+    user = User.objects.get(id = user_id)
+    profile=  Profile.objects.get(user=user)
+    
+
+
+    
+
+    client = OpenAI(api_key= settings.GPT_SECRET)
+    print('sending request to gpt')
+    img = client.images.generate(
+        model="gpt-image-1",
+        prompt= prompt,
+        background="transparent",  # Set background to transparent
+        output_format="png",
+        n=1 ,
+        quality = 'high',
+        size="1024x1024",
+    )
+    
+    image_bytes = base64.b64decode(img.data[0].b64_json)
+
+
+    #match = re.match(r"data:image/\\w+;base64,(.*)", image_bytes)
+    #png_bytes = base64.b64decode(match.group(1) if match else image_bytes)
+    print('uploading to s3')
+    url = upload_png(image_bytes, folder="profiles", extention='png', content_type='image/png')
+    print('uploaded to s3')
+    # save on the profile
+    print('url by gpt',url)
+    profile.avatar = url
+    profile.save()    
+
+    obj, created = Avatar.objects.update_or_create(
+    profile=profile,              # lookup
+    defaults={"avatar_image_url": url},  # applied as UPDATE or on INSERT
+    )
+    print('avatar',url)
+   
+
+    channel_layer = get_channel_layer()
+    async_to_sync(channel_layer.group_send)(
+        f"user_{user_id}",
+        {
+            "type": "avatar_ready",
+            "avatar_url": url,
+        }
+    )
+
+    return {"avatar_url": url}
     
