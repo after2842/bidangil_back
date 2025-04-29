@@ -27,28 +27,7 @@ from celery.schedules import crontab
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-d^9soj8_40+y8*5iu*4#&50m0@dtxy7uui_7amgi$3tgrf)h8a'
-STRIPE_API = 'sk_test_51PtQWTC3qQke2faEEEdPwXssf654tANvprDWICGuZs8q4CO5f77uxwPSNlto7zmhrvFZ3xUmmtRgXtJJQdJcZ1ml00zVDwJEaS'
-# SECURITY WARNING: don't run with debug turned on in production!
-STRPIE_WEBHOOK_SEC = 'whsec_BYfhBcSfSZQryHAiTMuAFj1kD6aKTB9p'
-DEBUG = True
-GOOGLE_API= 'AIzaSyBDIYy1cEoJIzN4VacqPuC8pV66I1wjVzg'
-GPT_SECRET = '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'
-ALLOWED_HOSTS = ['54.176.252.155','localhost', '127.0.0.1', 'bidangil.co']
-
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.ionos.com'  # or your provider
-EMAIL_PORT = 465
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'samuel.choi@atozservice.net'
-
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-AWS_ACCESS_KEY_ID='AKIASVLKCS3CP3DWUM4Q'
-AWS_SECRET_ACCESS_KEY = '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'
 
 # Application definition
 
