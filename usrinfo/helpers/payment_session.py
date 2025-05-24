@@ -1,6 +1,7 @@
 import stripe
 from decimal import Decimal
 from django.conf import settings
+
 stripe.api_key = settings.STRIPE_API
 
 
@@ -37,7 +38,7 @@ def create_delivery_payment(payment):
                 'quantity': 1,
             },          
         ],
-        success_url='https://naver.com',
+        success_url='https://bidangil.co',
         cancel_url='https://google.com',
                 metadata={
             'payment_type': 'delivery',        # <--- Custom data you add
@@ -95,7 +96,7 @@ def create_item_payment(order):
         payment_method_types=['card'],
         mode='payment',
         line_items=payment_desc,
-        success_url='https://naver.com',
+        success_url='https://bidangil.co',
         cancel_url='https://google.com',
                         metadata={
             'payment_type': 'items',        # <--- Custom data you add

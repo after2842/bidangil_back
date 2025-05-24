@@ -5,14 +5,10 @@ from .models import Payment, InProgressOrder, Delivery, Profile, InProgressOrder
 from django.db.models.signals import pre_save, post_save
 from .helpers.payment_session import create_delivery_payment, create_item_payment
 from datetime import datetime, timezone
-
-def order_message(urls, descriptions, prices):
-    message = ""
-    for i in range (len(urls)):
-        message += f"\n상품{i+1}\n{urls[i]}\n옵션: {descriptions[i]} \n가격: {prices[i]}\n"
-
-    return message
-
+from django.conf import settings
+from django.core.mail import EmailMultiAlternatives
+from .helpers.email_template import render_order_email, order_message, render_delivery_email, purchase_confirm_email, render_delivery_info_email, render_delivery_complete_email,render_order_start_email
+from .helpers.send_sms import send_sms
 @receiver(post_save, sender=InProgressOrder)
 def send_new_order_email(sender, instance, created, **kwargs):
     if created:
@@ -23,19 +19,35 @@ def send_new_order_email(sender, instance, created, **kwargs):
         
         user_nickname = profile.nickname
         InProgressOrderSteps.objects.create(order=instance, request_received = True)
-        send_mail(
-            subject=f'{user_nickname}의 주문이 접수되었습니다! #{instance.id}',
-            message=(
-                f'안녕하세요 {user_nickname} 님,\n\n'
-                f'비단길을 이용해주셔서 감사합니다.\n\n'
-                f'고객님의 주문요청이 접수되었습니다.\n\n'
-                f"더 자세한 사항은 '홈페이지 -> 내 정보'에서 확인하실 수 있습니다.\n"
-                f"곧 접수된 주문의 통관정보와 결제 링크를 안내드리겠습니다!\n"
-            ),
-            from_email=None,  # Uses DEFAULT_FROM_EMAIL from settings.py
-            recipient_list=[user_email],
-            fail_silently=False,
+        subject = f'비단길에서 안내드립니다 – 주문번호 #{instance.id}'
+
+        # Fallback text version for clients that don’t support HTML
+        text_content = (
+            f'안녕하세요 {user_nickname} 님,\n\n'
+            f'비단길을 이용해주셔서 감사합니다.\n\n'
+            f'고객님의 주문요청이 접수되었습니다. 주문버호: {instance.id}\n\n'
+            f"더 자세한 사항은 '홈페이지 -> 내 정보'에서 확인하실 수 있습니다.\n"
+            f"곧 접수된 주문의 통관정보와 결제 링크를 안내드리겠습니다\n"
         )
+
+        # Render HTML with your helper function
+        html_content = render_order_start_email(
+            user_nickname=user_nickname,
+            order_id=instance.id
+        )
+
+        # Send the email
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body=text_content,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[user_email]
+        )
+        email.attach_alternative(html_content, "text/html")
+        email.send()
+        send_sms(phone_num='9492997512', country_code='1', nickname=f"", content=f"새 주문 #{instance.id}")
+        send_sms(phone_num='01083413311', country_code='82', nickname=f"", content=f"새 주문 #{instance.id}")
+
 _PREVIOUS_DELIVERY_VALUES = {}
 @receiver(pre_save, sender=Delivery)
 def store_previous_delivery_fields(sender, instance, **kwargs):
@@ -63,9 +75,13 @@ def delivery_started(sender, instance, created, **kwargs):
     user = order.user
     user_email = user.username
     profile = Profile.objects.get(user = user)
+    steps = order.steps
     user_nickname = profile.nickname
+
     if not is_delivered:
         print('is delivered false')
+        print(f"courier: {instance.courier}")
+        print(f"tracking_num: {instance.tracking_number}")
     else:
         print('is delivered true')
 
@@ -76,39 +92,66 @@ def delivery_started(sender, instance, created, **kwargs):
         steps = InProgressOrderSteps.objects.get(order = order)
         steps.delivery_started = True
         steps.save()
+        subject = f'비단길에서 안내드립니다. – 주문번호 #{order.id}'
 
-        send_mail(
-            subject=f'{user_nickname}님의 배송이 시작되었습니다. #{instance.id}',
-            message=(
-                f'안녕하세요 {user_nickname} 님,\n\n'
-                f'고객님의 배송이 시작되었습니다.\n\n'
-                f'운송사:{courier} \n\n'
-                f'조회번호:{tracking_num} \n\n'
-                f'배송조회:{make_tracking_url(courier, tracking_num)} \n\n'
-                f"더 자세한 사항은 '홈페이지 -> 내 정보'에서 확인하실 수 있습니다.\n"
-
-            ),
-            from_email=None,  # Uses DEFAULT_FROM_EMAIL from settings.py
-            recipient_list=[user_email],
-            fail_silently=False,
+        # Fallback text version for clients that don’t support HTML
+        text_content = (
+            f'안녕하세요 {user_nickname} 님,\n\n'
+            f'고객님의 배송이 시작되었습니다.\n\n'
+            f'운송사:{courier} \n\n'
+            f'조회번호:{tracking_num} \n\n'
+            f'배송조회:{make_tracking_url(courier, tracking_num)} \n\n'
+            f"더 자세한 사항은 '홈페이지 -> 내 정보'에서 확인하실 수 있습니다.\n"
         )
-    elif not created and not is_delivered:
+
+        # Render HTML with your helper function
+        html_content = render_delivery_info_email(
+            user_nickname=user_nickname,
+            courier=courier,
+            tracking_num=tracking_num,
+            tracking_url=make_tracking_url(courier, tracking_num),
+        )
+
+        # Send the email
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body=text_content,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[user_email]
+        )
+        email.attach_alternative(html_content, "text/html")
+        email.send()
+        send_sms(phone_num=order.phone, country_code='1', nickname=user_nickname, content="[비단길 알림]\n 고객님의 배송이 시작되었습니다. \n이메일을 확인해주세요.")
+        
+
+    elif not created and not is_delivered and steps.delivery_completed:
         print('delivery complete email')
-        send_mail(
-            subject=f'{user_nickname}님, 배송은 잘 받으셨나요? #{instance.id}',
-            message=(
-                f'안녕하세요 {user_nickname} 님,\n\n'
-                f'고객님의 배송이 완료되었습니다!!\n\n'
-                f'운송사:{courier} \n\n'
-                f'조회번호:{tracking_num} \n\n'
-                f'배송조회:{make_tracking_url(courier, tracking_num)} \n\n'
-                f"저희 비단길을 이용해주셔서 감사합니다. 다음에는 더 쉽고 빠른 서비스로 찾아뵙겠습니다.\n"
+        subject = f'[비단길] {user_nickname}님, 배송은 잘 받으셨나요? #{instance.id}'
 
-            ),
-            from_email=None,  # Uses DEFAULT_FROM_EMAIL from settings.py
-            recipient_list=[user_email],
-            fail_silently=False,
+        # Fallback text version for clients that don’t support HTML
+        text_content = (
+            f'안녕하세요 {user_nickname} 님,\n\n'
+            f'고객님의 배송이 완료되었습니다!!\n\n'
+            f'고객님의 소중한 리뷰를 남겨주세요\n\n'
+            f"https://bidangil.co/community/review\n"
+            f"저희 비단길을 이용해주셔서 감사합니다. 다음에는 더 쉽고 빠른 서비스로 찾아뵙겠습니다.\n"
         )
+
+        # Render HTML with yousr helper function
+        html_content = render_delivery_complete_email(
+            user_nickname=user_nickname,
+        )
+
+        # Send the email
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body=text_content,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[user_email]
+        )
+        email.attach_alternative(html_content, "text/html")
+        email.send()
+
 
 
 def make_tracking_url(courier, tracking_num):
@@ -120,21 +163,6 @@ def make_tracking_url(courier, tracking_num):
         url = "{courier} 홈페이지에서 배송 조회 번호를 입력해 주세요."
     return url
 
-# @receiver(post_save, sender=InProgressOrderItem)   ===================> this will cause a multiple execution of Paymnet.objects.create(), because the 'instance' could be multiple (more than one InProgressOrderItem is updated and receiver listens to those events seperately)
-# def create_payment_instance(sender, instance, created, **kwargs):
-#     if not created:
-#         total_item_price = 0
-#         order = instance.order
-#         progress_itmes = order.items.all()
-
-#         for item in progress_itmes:
-#             total_item_price+=item.price
-
-#         Payment.objects.create(order=order, item_price = total_item_price)
-
-#         order_steps = InProgressOrderSteps.objects.get(order = order)
-#         order_steps.item_purchased = True
-#         order_steps.save()
 
 _PREVIOUS_PAYMENT_VALUES = {}
 _PREVIOUS_PROGRESS_VALUES = {}
@@ -175,23 +203,38 @@ def send_payment_update_emails(sender, instance, created, **kwargs):
         if paymentcreated:
             progressItems = order.items.all()
             detailed_message = detailed_price_message(progressItems)
-            send_mail(
-                    subject=f'비단길에서 알려드립니다. Order #{order.id}',
-                    message=(
-                        f'안녕하세요 {user_nickname}님,\n\n'
-                        f'고객님의 주문을 접수 받았습니다.'
-                        f'결제 완료 후 비단길에서 상품의 구매를 시작합니다.\n'
-                        f'{detailed_message}\n'
-                        f'결제: {payment_url}\n\n'
-                        f'비단길 웹사이트 -> 내 정보에서 결제하실 수도 있습니다.'
-                        f'더욱 상세한 주문 정보는 비단길 (웹사이트 -> 내 정보)에서 확인 가능합니다.\n'
-                        '비단길을 이용해주셔서 감사합니다'
-                    ),
-                    from_email=None,
-                    recipient_list=[user_email],
-                    fail_silently=False,
-                )
+            subject = f'비단길에서 안내드립니다 – 주문번호 #{order.id}'
+
+            # Fallback text version for clients that don’t support HTML
+            text_content = (
+                f'안녕하세요 {user_nickname}님,\n\n'
+                f'주문이 접수되었습니다.\n'
+                f'{detailed_message}\n'
+                f'결제: {payment_url if payment_url else "비단길 웹사이트 → 내 정보"}\n\n'
+                f'비단길을 이용해주셔서 감사합니다.'
+            )
+
+            # Render HTML with your helper function
+            html_content = render_order_email(
+                user_nickname=user_nickname,
+                order_id=order.id,
+                detailed_message=detailed_message,
+                payment_url=payment_url,
+            )
+
+            # Send the email
+            email = EmailMultiAlternatives(
+                subject=subject,
+                body=text_content,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=[user_email]
+            )
+            email.attach_alternative(html_content, "text/html")
+            email.send()
              #same as InProgressItem.object.filter(order=order) | this is called 'using reverse relationship'
+
+            send_sms(phone_num=order.phone, country_code='1', nickname=user_nickname, content="[비단길 알림]\n고객님의 주문이 결제 대기중입니다.\n이메일을 확인해주세요.")
+  
 
             total_item_price = 0
 
@@ -222,28 +265,43 @@ def send_payment_update_emails(sender, instance, created, **kwargs):
             order_steps.delivery_ready = True
             order_steps.save()
 
+            detailed_message = order.address
+
             instance.total_fee = instance.item_price + instance.delivery_fee
             instance.save()
 
             stripe_payment_id, payment_url, paymentcreated = create_delivery_payment(instance)#create custom paymnt session
             if paymentcreated:
-                send_mail(
-                    subject=f'비단길에서 알려드립니다. Order #{order.id}',
-                    message=(
-                        f'안녕하세요 {user_nickname}님,\n\n'
-                        f'고객님의 주문이 배송대기 중입니다.'
-                        f'아래의 링크로 배송비를 결제해주세요.\n\n'
-                        f'결제 완료 후 배송이 시작됩니다.\n'
-                        f'결제: {payment_url}\n\n'
-                        f'비단길 웹사이트 -> 내 정보에서 결제하실 수도 있습니다.'
-                        f'더욱 상세한 주문 정보는 비단길 (웹사이트 -> 내 정보)에서 확인 가능합니다.\n'
-                        f'추후 배송이 시작되면 배송 조회 번호를 보내드립니다.\n'
-                        '비단길을 이용해주셔서 감사합니다'
-                    ),
-                    from_email=None,
-                    recipient_list=[user_email],
-                    fail_silently=False,
+                subject = f'비단길에서 안내드립니다 – 주문번호 #{order.id}'
+
+                # Fallback text version for clients that don’t support HTML
+                text_content = (
+                    f'안녕하세요 {user_nickname}님,\n\n'
+                    f'고객님의 주문이 배송대기 중입니다.\n'
+                    f'다음의 링크를 통해 결제를 해주시면, 비단길에서 다음의 주소로 배송을 시작합니다.'
+                    f'{detailed_message}'
+                    f'결제: {payment_url if payment_url else "비단길 웹사이트 → 내 정보"}\n\n'
+                    f'비단길을 이용해주셔서 대단히 감사합니다.'
                 )
+
+                # Render HTML with your helper function
+                html_content = render_delivery_email(
+                    user_nickname=user_nickname,
+                    order_id=order.id,
+                    detailed_message=detailed_message,
+                    payment_url=payment_url,
+                )
+
+                # Send the email
+                email = EmailMultiAlternatives(
+                    subject=subject,
+                    body=text_content,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    to=[user_email]
+                )
+                email.attach_alternative(html_content, "text/html")
+                email.send()
+                send_sms(phone_num=order.phone, country_code='1', nickname=user_nickname, content="[비단길 알림]\n고객님의 물건이 배송 대기중입니다.\n이메일을 확인해주세요.")
 
             #update corresponding Payment object (invoice created/ stripe ID / paymenturl)
 
@@ -280,27 +338,35 @@ def send_payment_update_emails(sender, instance, created, **kwargs):
     #send clients' that we've purchased the item. WHEN the admin check 'item_purchased'
     if instance.item_purchased and (not previous_values.get('item_purchased')):        
         print('let user know item is purchased')
-        progressItems = order.items.all() #same as InProgressItem.object.filter(order=order) | this is called 'using reverse relationship'
 
+        subject = f'비단길에서 안내드립니다 – 주문번호 #{order.id}'
 
-        detailed_message = detailed_price_message(progressItems)
+        # Fallback text version for clients that don’t support HTML
+        text_content = (
+            f'안녕하세요 {user_nickname}님,\n\n'
+            f'고객님이 주문하신 상품들을 비단길에서 구매하였습니다.\n'
+            f'배송준비가 완료되면 최종적인 안내와 배송비 결제 링크를 보내드립니다.'
+            f'비단길을 이용해주셔서 감사합니다'
+        )
 
+        # Render HTML with your helper function
+        html_content = purchase_confirm_email(
+            user_nickname=user_nickname,
+        )
 
+        # Send the email
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body=text_content,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[user_email]
+        )
+        email.attach_alternative(html_content, "text/html")
+        email.send()
+        send_sms(phone_num=order.phone, country_code='1', nickname=user_nickname, content="[비단길 알림]\n비단길에서 주문하신 상품을 구매하였습니다.\n이메일을 확인해주세요.")
         
 
-        send_mail(
-            subject=f'비단길에서 알려드립니다. Order #{order.id}',
-            message=(
-                f'안녕하세요 {user_nickname}님,\n\n'
-                f'고객님이 주문하신 상품들을 비단길에서 구매하였습니다.'
-                f'더욱 상세한 주문 정보는 비단길 (웹사이트 -> 내 정보)에서 확인 가능합니다.'
-                f'배송준비가 완료되면 최종적인 안내와 배송비 결제 링크를 보내드립니다.'
-                '비단길을 이용해주셔서 감사합니다'
-            ),
-            from_email=None,
-            recipient_list=[user_email],
-            fail_silently=False,
-        )
+
 
 
 def detailed_price_message(progressItems):
@@ -315,29 +381,3 @@ def detailed_price_message(progressItems):
 
     return order_message(urls, descriptions, prices)
 
-
-# @receiver(post_save, sender=Delivery)
-# def send_payment_email(sender, instance, created, **kwargs):
-#     if created:
-#         order = instance.order
-#         user = order.user
-#         user_email = user.email
-#         profile = Profile.objects.get(user = user)
-        
-#         user_nickname = profile.nickname
-
-#         send_mail(
-#             subject=f'Payment Received for Order #{order.id}',
-#             message=(
-#                 f'Hello {user_nickname},\n\n'
-#                 f'We received your payment!\n\n'
-#                 f'Order ID: #{order.id}\n'
-#                 f'Item Price: ${instance.item_price}\n'
-#                 f'Delivery Fee: ${instance.delivery_fee}\n'
-#                 f'Total: ${instance.total_fee}\n\n'
-#                 'Thank you for shopping with us!'
-#             ),
-#             from_email=None,  # Uses DEFAULT_FROM_EMAIL from settings.py
-#             recipient_list=[user_email],
-#             fail_silently=False,
-#         )

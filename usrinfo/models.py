@@ -4,6 +4,7 @@ from django.db import models
 from django.utils import timezone
 from datetime import timedelta
 from datetime import datetime
+from autoslug import AutoSlugField
 
 class InProgressOrder(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='inprogress_orders')
@@ -149,10 +150,16 @@ class Profile(models.Model):
     phone_number = models.CharField(max_length=20, blank=True)
     signup_date = models.DateTimeField(auto_now_add=True)
     last_address = models.TextField(max_length=255, blank = True)
+
+    community_address = models.CharField(max_length=20, blank=True, default="")
+    likes = models.IntegerField(blank=True, default=0)
+
     avatar = models.URLField(blank=True, default='https://bidangilimage.s3.us-west-1.amazonaws.com/profiles/basic_avatar.png')
 
     def __str__(self):
         return f"Name:{self.nickname} || Email:{self.user.username}"
+    
+
 
 class Avatar(models.Model):
     profile = models.OneToOneField(Profile, on_delete=models.CASCADE, related_name = 'avatars')
@@ -173,10 +180,28 @@ class Post(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='posts')
     nickname = models.CharField(max_length=40, blank=True)
     category = models.CharField(max_length=20, blank=True, default='')
+
+    subcategory = models.CharField(max_length=20, blank=True, default='')
+    state = models.CharField(max_length=20, blank=True, default = '')
+    county = models.CharField(max_length=20, blank=True, default = '')
+    meetuptype = models.CharField(max_length=20, blank=True, default='')
+    restaurant_address = models.CharField(max_length=50, blank=True, default='')
+
+    
+
     title = models.TextField(blank=True)
+    slug = AutoSlugField(populate_from='title', unique=True)
     content = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     avatar = models.URLField(blank=True, default='https://bidangilimage.s3.us-west-1.amazonaws.com/profiles/basic_avatar.png') #doesn't update once posted
+
+class PostComment(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='comment_usr')
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='comment_post')
+    content = models.TextField(blank=True)
+    reply_to = models.ForeignKey("self", on_delete=models.CASCADE, related_name= "replies", null=True, blank=True)
+    likes = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now=True)
 
 class PostImage(models.Model):
     post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='post_images')
@@ -184,3 +209,15 @@ class PostImage(models.Model):
 
 class Foo(models.Model):
     name = models.CharField(max_length=50)
+    
+class UserLikes(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name= 'user_likes')
+    liked_users = models.ForeignKey(Profile,on_delete=models.CASCADE, related_name = 'profile_likes_users')
+
+class PostLikes(models.Model):
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name= 'post_likes')
+    liked_users = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name = 'post_likes_users')
+
+class CommentLikes(models.Model):
+    comment = models.ForeignKey(PostComment, on_delete=models.CASCADE, related_name='commnet_like')
+    liked_users = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name='comment_likes_users')

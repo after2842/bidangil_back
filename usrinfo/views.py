@@ -1,6 +1,6 @@
 from django.shortcuts import render
 from openai import OpenAI
-from django.http import JsonResponse 
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
 from rest_framework.permissions import IsAuthenticated
@@ -10,12 +10,12 @@ from django.middleware.csrf import get_token
 from rest_framework.decorators import api_view, permission_classes, parser_classes
 # from .serializers import 
 from django.contrib.auth.models import User
-from .models import Profile, EmailVerification,InProgressOrder,InProgressOrderItem, PastOrder, PastOrderItem, Payment, Delivery, InProgressOrderSteps, Post, PostImage
+from .models import Profile, EmailVerification,InProgressOrder,InProgressOrderItem, PastOrder, PastOrderItem, Payment, Delivery, InProgressOrderSteps, Post, PostImage, PostLikes, UserLikes, PostComment, CommentLikes
 from django.core.mail import send_mail
 import random
 from django.utils import timezone
-import trackingmore
-from datetime import datetime
+from datetime import datetime, date
+import calendar
 from .tasks import process_websearch_task, generate_avatar
 from .helpers.exchange_rate import get_exchange_rate
 from .helpers.s3 import upload_png
@@ -24,8 +24,10 @@ from .webhooks.trackingwebhook import karrio_webhook
 from django.conf import settings
 from rest_framework.parsers import MultiPartParser, FormParser
 import requests
-from .serializers import ReviewSerializer
-
+from .serializers import ReviewSerializer, PostSerializer, CommunityInfoByOthersSerializer, CommentTreeSerializer
+from django.core.mail import EmailMultiAlternatives
+from .helpers.send_sms import send_sms
+from .helpers.email_template import render_item_payment_confirm_email, render_delivery_payment_confirm_email
 @api_view(["GET"])
 def get_csrf_token(request):
     """
@@ -39,6 +41,10 @@ def get_csrf_token(request):
     print('csrf_token',csrf_token)
     return JsonResponse({"csrfToken": csrf_token})
 
+def session_ping(request):
+    if request.user.is_authenticated:
+        return JsonResponse({"authenticated": True})
+    return JsonResponse({"authenticated": False}, status=401)
 
 @api_view(["POST"])
 def send_verification_code(request):
@@ -65,12 +71,13 @@ def send_verification_code(request):
             record.created_at = timezone.now()
             print(f"is created {record.created_at} {timezone.now()}  {code}")
             record.save()
-
+      
         send_mail(
-            '비단길 인증코드입니다.',
-            f'회원님의 인증코드는 {code} 입니다',
-            'no-reply@atozservice.net',
-            [email],
+            subject ='비단길 인증코드입니다.',
+            message = f'회원님의 인증코드는 {code} 입니다',
+            from_email='support@bidangil.co',
+            recipient_list=[email],
+            
             fail_silently=False,
 
         )
@@ -86,12 +93,12 @@ def verify_code(request):
     data = json.loads(request.body)
     email = data['email']
     code = data['code']
-    print(f"###########{email}####")
-    print(f"###########{code}####")
+    # print(f"###########{email}####")
+    # print(f"###########{code}####")
     try:
-        print("---- All EmailVerification records ----")
-        for obj in EmailVerification.objects.all():
-            print(f"email: {obj.email}, code: {obj.code}, verified: {obj.isVerified}, created_at: {obj.created_at}")
+        # print("---- All EmailVerification records ----")
+        # for obj in EmailVerification.objects.all():
+        #     print(f"email: {obj.email}, code: {obj.code}, verified: {obj.isVerified}, created_at: {obj.created_at}")
 
         record = EmailVerification.objects.get(email=email, code=code)
         print(f"created_at: {record.created_at} email:{record.email}")
@@ -189,17 +196,22 @@ def login_view(request):
     if user is not None:
         profile = Profile.objects.get(user=user)
         print('login nickname to front',user.username,profile.nickname)
-        return JsonResponse({'msg': f"{email} is logged in!",'data': {'email':user.username, 'nickname':profile.nickname}}, safe=False)
+        return JsonResponse({'msg': f"{email} is logged in!",'data': {'email':user.username, 'nickname':profile.nickname}}, status=200)
     return JsonResponse({"error": "Invalid credentials"}, status=401)
 
 
+
+
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
 def logout_view(request):
-    user = request.user
-    user_email = user.username
-    logout(request)
-    return JsonResponse({"msg": f"{user_email}Logged out"}, status=200)
+    try:
+        user = request.user
+        user_email = user.username
+        logout(request)
+        return JsonResponse({"msg": f"{user_email}Logged out"}, status=200)
+    except Exception as e:
+        print("logoutview err",e)
+        return JsonResponse({"err": str(e)}, status=400)
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated]) 
@@ -249,6 +261,7 @@ def get_profile_info(request):
     ProfileDataList = []
     try:
         user = request.user
+        nickname = user.profile.nickname
         inprogress_orders = InProgressOrder.objects.filter(user = user)
 
         for inprogress_order in inprogress_orders:
@@ -292,7 +305,7 @@ def get_profile_info(request):
             except InProgressOrderSteps.DoesNotExist:
                 steps_data = None
 
-            ProfileData = {
+            ProfileData = { 
                 'id':inprogress_order.id,
                 'address': inprogress_order.address,
                 'order_created_at': str(inprogress_order.order_created_at),
@@ -305,7 +318,7 @@ def get_profile_info(request):
             print(f"ProfileDataList:{ProfileDataList}/// exchangerate {ProfileData['exchange_rate']}")
             ProfileDataList.append(ProfileData)
             print(json.dumps(ProfileDataList,indent=4))
-        return JsonResponse({'msg': 'user inprogress data loaded!', 'data': ProfileDataList}, status = 200)
+        return JsonResponse({'msg': 'user inprogress data loaded', 'data': ProfileDataList,'nickname' : str(nickname)}, status = 200)
     except Exception as e:
         print(str(e))
         return JsonResponse({'err msg': str(e)}, status = 500)
@@ -346,38 +359,6 @@ def move_to_past_order(inprogress_order_id):
 
     return past_order
 
-# @csrf_exempt
-# @api_view(["POST"])
-# def get_tracking_status(request): #call when user click the userprofile
-#     karrio_webhook(request)
-#     trackingmore.api_key = '56r7vls8-an4v-octa-i1sc-bhtgqbryhuwl'
-
-#     tracking_history = []
-#     try:
-
-#         params = {'tracking_numbers': f"{tracking_number}", 'courier_code': 'fedex'}
-#         tracking_status = trackingmore.tracking.get_tracking_results(params)
-
-#         tracking_data = tracking_status['data'][0]['origin_info']['trackinfo']
-#         trackinfo_sorted = sorted(tracking_data, key=lambda x: datetime.fromisoformat(x['checkpoint_date']))
-
-#         for i, status in enumerate(trackinfo_sorted):
-#             tracking_checkpoint = {
-#                 'date':status.get('checkpoint_date'),
-#                 'status' : status.get('checkpoint_delivery_status'),
-#                 'location' : status.get('location')
-#             }
-#             print(f"{i+1}th update: \n DATE: {tracking_checkpoint['date']}\n STATUS:{tracking_checkpoint['status']}\n LOCATION:{tracking_checkpoint['location']}")
-#             tracking_history.append(tracking_checkpoint)
-#         return tracking_history
-
-           
-
-#     except trackingmore.exception.TrackingMoreException as ce:
-#         print(ce)
-#     except Exception as e:
-#         print("other error:", e) 
-
 
     
 @csrf_exempt
@@ -399,53 +380,88 @@ def stripe_webhook_view(request):
                 #update the order step object
                 steps = InProgressOrderSteps.objects.get(order = user_payment_object.order)
                 steps.delivery_fee_paid = True
+
                 steps.save()
+
+                usr_phone = user_payment_object.order.phone
 
                 user_nickname =  Profile.objects.get(user = user_payment_object.order.user)
                 email = user_payment_object.order.user.username
+                subject = f'비단길에서 안내드립니다 – 주문번호 #{user_payment_object.order.id}'
 
-                #send email
-                send_mail(
-                    subject=f'비단길에서 알려드립니다. Order #{user_payment_object.order.id}',
-                    message=(
-                        f'안녕하세요 {user_nickname}님 결제해주셔서 감사합니다,\n\n'
-                        f'고객님의 상품 결제가 정상적으로 처리되었습니다.\n\n'
-                        f'비단길에서 고객님의 상품을 대신 구매하여 배송을 준비할 예정입니다.\n'
-                        f'상세한 주문 정보는 비단길 (웹사이트 -> 내 정보)에서 확인 가능합니다.'
-                        '비단길을 이용해주셔서 감사합니다'
-                    ),
-                    from_email=None,
-                    recipient_list=[email],
-                    fail_silently=False,
+                # Fallback text version for clients that don’t support HTML
+                text_content = (
+                    f'안녕하세요 {user_nickname}님 결제해주셔서 감사합니다,\n\n'
+                    f'고객님의 상품 결제가 정상적으로 처리되었습니다.\n\n'
+                    f'비단길에서 고객님의 상품을 대신 구매하여 배송을 준비할 예정입니다.\n'
+                    f'상세한 주문 정보는 비단길 (웹사이트 -> 내 정보)에서 확인 가능합니다.'
+                    '비단길을 이용해주셔서 감사합니다'
                 )
+
+                # Render HTML with your helper function
+                html_content = render_delivery_payment_confirm_email(
+                    user_nickname=user_nickname,
+                )
+
+                # Send the email
+                email = EmailMultiAlternatives(
+                    subject=subject,
+                    body=text_content,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    to=[email]
+                )
+                email.attach_alternative(html_content, "text/html")
+                email.send()
+
+                send_sms(phone_num='9492997512', country_code='1', nickname=f"", content=f"배송비 결제 완료 #{user_payment_object.order.id}")
+                send_sms(phone_num='01083413311', country_code='82', nickname=f"", content=f"배송비 결제 완료 #{user_payment_object.order.id}")
+
+                send_sms(phone_num=usr_phone, country_code='1', nickname=user_nickname, content=f"[비단길 알림]\n고객님의 결제가 정상 처리되었습니다.\n 자세한 사항은 이메일을 확인해주세요.")
+
             elif payment_type == 'items':
 
                 #find corresponding Payment object with its id
                 user_payment_object = Payment.objects.filter(stripe_item_id = session_id)
                 user_payment_object.item_fee_paid = True
                 user_payment_object.save()
+                user_nickname =  Profile.objects.get(user = user_payment_object.order.user)
+                email = user_payment_object.order.user.username
+                usr_phone = user_payment_object.order.phone
 
                 #update the order step (to show clients)
                 steps = InProgressOrderSteps.objects.get(order = user_payment_object.order)
                 steps.item_fee_paid = True
                 steps.save()
+                subject = f'비단길에서 안내드립니다 – 주문번호 #{user_payment_object.order.id}'
 
-                user_nickname =  Profile.objects.get(user = user_payment_object.order.user)
-                email = user_payment_object.order.user.username
-
-                send_mail(
-                    subject=f'비단길에서 알려드립니다. Order #{user_payment_object.order.id}',
-                    message=(
-                        f'안녕하세요 {user_nickname}님 결제해주셔서 감사합니다,\n\n'
-                        f'고객님의 결제가 정상적으로 처리되었습니다.\n\n'
-                        f'고객님의 물건이 발송될 예정입니다. 곧 배송 정보와 함께 연락드리겠습니다! \n'
-                        f'상세한 주문 정보는 비단길 (웹사이트 -> 내 정보)에서 확인 가능합니다.'
-                        '비단길을 이용해주셔서 감사합니다'
-                    ),
-                    from_email=None,
-                    recipient_list=[email],
-                    fail_silently=False,
+                # Fallback text version for clients that don’t support HTML
+                text_content = (
+                    f'안녕하세요 {user_nickname}님 결제해주셔서 감사합니다,\n\n'
+                    f'고객님의 결제가 정상적으로 처리되었습니다.\n\n'
+                    f'고객님의 물건이 발송될 예정입니다. 곧 배송 정보와 함께 연락드리겠습니다! \n'
+                    f'상세한 주문 정보는 비단길 (웹사이트 -> 내 정보)에서 확인 가능합니다.'
+                    '비단길을 이용해주셔서 감사합니다'
                 )
+
+                # Render HTML with your helper function
+                html_content = render_item_payment_confirm_email(
+                    user_nickname=user_nickname,
+                )
+
+                # Send the email
+                email = EmailMultiAlternatives(
+                    subject=subject,
+                    body=text_content,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    to=[email]
+                )
+                email.attach_alternative(html_content, "text/html")
+                email.send()
+
+                send_sms(phone_num='9492997512', country_code='1', nickname=f"", content=f"물건대금 결제 완료 #{user_payment_object.order.id}")
+                send_sms(phone_num='01083413311', country_code='82', nickname=f"", content=f"물건대금 결제 완료 #{user_payment_object.order.id}")         
+                send_sms(phone_num=usr_phone, country_code='1', nickname=user_nickname, content=f"[비단길 알림]\n고객님의 결제가 정상 처리되었습니다.\n 자세한 사항은 이메일을 확인해주세요.")
+       
             print('payment successful!')
         except Exception as e:
             print(e)
@@ -489,8 +505,8 @@ def validate_address(request):
 
 
 
-@permission_classes([IsAuthenticated])
 @api_view(["POST"])
+@permission_classes([IsAuthenticated])
 def store_new_avatar(request):
     data = request.data
     print('data', data)
@@ -505,15 +521,35 @@ def store_new_avatar(request):
     '''
     print('delay()')
     generate_avatar.delay(prompt, request.user.id)
+    import time
+    time.sleep(5)
     print('deplay() is completed')
 
     return JsonResponse({"msg": 'success'},status=200)
 
-
-
-
-@permission_classes([IsAuthenticated])
 @api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_others_community_profile(request):
+    print('inside others comm profile')
+    print("user:", request.user)
+    print("auth:", request.auth)
+    print("is_authenticated:", request.user.is_authenticated)
+    try:
+        target_nickname = request.GET.get("usr", '')
+        target_profile = Profile.objects.get(nickname = target_nickname)
+
+        data = CommunityInfoByOthersSerializer(target_profile).data
+        
+        return JsonResponse({"result": data}, status =200)
+    except Profile.DoesNotExist:
+        return JsonResponse({"err": "no such usr"}, status =400)
+
+    except Exception as e:
+        print("other info",e)
+        return JsonResponse({"err":str(e)}, status = 500)
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def community_profile(request):
     print('inside get profile info')
     try:
@@ -521,17 +557,28 @@ def community_profile(request):
         print(user.username)
         usr_profile = Profile.objects.get(user=user)
 
+        liked_users = UserLikes.objects.filter(liked_users = usr_profile)
+
+        liked_users_nickname = [single.user.profile.nickname for single in liked_users]
+        liked_users_avatars = [single.user.profile.avatar for single in liked_users]
+        print("liked_users_avaars, ", liked_users_avatars[0])
         avatar_url = usr_profile.avatar
+        address = usr_profile.community_address
+        likes = usr_profile.likes
+        nickname = usr_profile.nickname
         print('avatarurl...////',avatar_url)
-        return JsonResponse({'avatar': avatar_url}, status =200)
+        return JsonResponse({'avatar': avatar_url, 'nickname':nickname, 'address':address, 
+                             'likes':likes, "liked_users_nickname": liked_users_nickname, 
+                             "liked_users_avatars":liked_users_avatars}, status =200)
 
     except Exception as e:
+        print('comm profile',e)
         return JsonResponse({'err':str(e)}, status = 400)
 
 
 
-@permission_classes([IsAuthenticated])
 @api_view(["POST"])
+@permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
 def post_new(request):
     print('post new in herre!!!')
@@ -548,31 +595,105 @@ def post_new(request):
         print('4')
         urls=[]
 
-        for key, obj in uploaded_files.items():#to extract raw byte to send to s3
-            print('here!')
-            file_byte = obj.read()
-            content_type = obj.content_type
-            print(content_type,'contenttype')
-            extention = ''
-
-            if content_type == 'image/png': # for browsers and servers
-                extention='png' # for humans and os to recognize the file type
-            elif content_type == 'image/jpeg':
-                extention = 'jpeg'
-            elif content_type=='image/jpg':
-                extention = 'jpg'
-            else:
-                raise Exception('unsupported file format!')
-            url = upload_png(file_byte, folder='posts', extention = extention, content_type=content_type)
-            urls.append(url)
-        print('5')
         user = request.user
-        post = Post.objects.create(user=user)
+        post = Post.objects.create(user=user, title = title)
+
+        if category == 'review':
+
+            for key, obj in uploaded_files.items():#to extract raw byte to send to s3
+                print('here!')
+                file_byte = obj.read()
+                content_type = obj.content_type
+                print(content_type,'contenttype')
+                extention = ''
+
+                if content_type == 'image/png': # for browsers and servers
+                    extention='png' # for humans and os to recognize the file type
+                elif content_type == 'image/jpeg':
+                    extention = 'jpeg'
+                elif content_type=='image/jpg':
+                    extention = 'jpg'
+                else:
+                    raise Exception('unsupported file format!')
+                url = upload_png(file_byte, folder='posts/review', extention = extention, content_type=content_type)
+                urls.append(url)
+
+        if category == 'share':
+            state = request.POST.get('state','')
+            county = request.POST.get('county','')
+
+            post.state = state
+            post.county = county
+            post.save()
+            for key, obj in uploaded_files.items():#to extract raw byte to send to s3
+                print('here!')
+                file_byte = obj.read()
+                content_type = obj.content_type
+                print(content_type,'contenttype')
+                extention = ''
+
+                if content_type == 'image/png': # for browsers and servers
+                    extention='png' # for humans and os to recognize the file type
+                elif content_type == 'image/jpeg':
+                    extention = 'jpeg'
+                elif content_type=='image/jpg':
+                    extention = 'jpg'
+                else:
+                    raise Exception('unsupported file format!')
+                url = upload_png(file_byte, folder='posts/share', extention = extention, content_type=content_type)
+                urls.append(url)
+        if category == 'fun':
+            if request.POST.get('funcategory') == 'food':
+                restaurant_address = request.POST.get('restaurantaddress','')
+                post.restaurant_address = restaurant_address
+                post.subcategory = 'food'
+                post.save()
+                print('inside food!!')
+
+            if request.POST.get('funcategory') == 'meetup':
+                meetup_state = request.POST.get('state','')
+                meetup_county = request.POST.get('county', '')
+                meetup_type = request.POST.get('meetupcategory','')
+                print('inside meetup!!!')
+                print('meetup loc', meetup_county,meetup_state)
+
+                post.state = meetup_state
+                post.county = meetup_county
+                post.meetuptype = meetup_type
+                post.subcategory = 'meetup'
+                post.save()
+
+            if request.POST.get('funcategory') == 'chat':
+
+                post.subcategory = 'chat'
+                post.save()
+
+            
+            for key, obj in uploaded_files.items():#to extract raw byte to send to s3
+                print('here!')
+                file_byte = obj.read()
+                content_type = obj.content_type
+                print(content_type,'contenttype')
+                extention = ''
+
+                if content_type == 'image/png': # for browsers and servers
+                    extention='png' # for humans and os to recognize the file type
+                elif content_type == 'image/jpeg':
+                    extention = 'jpeg'
+                elif content_type=='image/jpg':
+                    extention = 'jpg'
+                else:
+                    raise Exception('unsupported file format!')
+                url = upload_png(file_byte, folder='posts/fun', extention = extention, content_type=content_type)
+                urls.append(url)
+
+        
+
         profile = Profile.objects.get(user=user)
         nickname =profile.nickname
         avatar = profile.avatar
 
-        post.title = title
+        
         post.category = category
         post.content=content
         post.nickname = nickname
@@ -588,8 +709,8 @@ def post_new(request):
 
     except Exception as e:
         return JsonResponse({'err':str(e)}, status = 400)
-    
-#@api_view(["GET"])
+
+@api_view(["GET"])
 def get_reviews(request):
     print('//////inside get reviews')
     try:
@@ -606,6 +727,7 @@ def get_reviews(request):
         end   = start + size
 
         total   = qs.count()
+        total_pages = total//size
         slice_q = qs[start:end]
 
         data = ReviewSerializer(slice_q, many=True).data
@@ -617,8 +739,302 @@ def get_reviews(request):
             "page":     page,
             "page_size": size,
             "has_next": has_next,
-            "total":    total,
+            "total_pages":    total_pages,
         }, status =200)
     except Exception as e:
         print('e',e)
     
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_my_posts (request):
+    try:
+        print('getmypost!!')
+        user = request.user
+        my_posts = Post.objects.filter(user=user)
+        serializer = PostSerializer(my_posts, many=True, context={"request":request})
+        return JsonResponse({'results':serializer.data}, status=200)
+    except User.DoesNotExist:
+        return JsonResponse({'resuls':"not_user"}, status=400)
+    except Exception as e:
+        return JsonResponse({'results':str(e)}, status = 500)
+
+
+@api_view(['GET'])
+def get_post_list(request):
+    page  = int(request.GET.get("page", 1))
+    size  = int(request.GET.get("size", 10))
+    filter = str(request.GET.get("filter", 'all'))
+
+    print(f"filter: {filter}")
+
+    start = (page - 1) * size
+    end   = start + size
+
+    if filter == '':
+        posts = Post.objects.exclude(category = 'review').order_by("-created_at")
+        total = posts.count()
+        total_pages = total//size
+        has_next = end < total
+        
+        slice_posts = posts[start:end]
+    else:    
+        if filter =='share':
+            posts = Post.objects.exclude(category = 'review').filter(category = 'share').order_by("-created_at")
+        else:
+            posts = Post.objects.exclude(category = 'review').filter(category = 'fun', subcategory = filter).order_by("-created_at")
+    
+        
+        total = posts.count()
+        total_pages = total//size
+        has_next = end < total
+        
+        slice_posts = posts[start:end]
+
+    
+    serializer = PostSerializer(slice_posts, many=True).data
+    return JsonResponse({
+            "results":  serializer,
+            "page":     page,
+            "page_size": size,
+            "has_next": has_next,
+            "total_pages": total_pages,
+        }, status =200)
+
+@api_view(['GET'])
+def get_post_detail(request, slug):
+   
+    print('got slug!!!', slug)
+    try:
+        post = Post.objects.get(slug=slug)
+        did_like=False
+
+        if request.user.is_authenticated:
+            did_like = post.post_likes.filter(liked_users = request.user.profile).exists()
+
+        print('category slug',post.category)
+        print('rest add', post.restaurant_address)
+        #print('target post retrieved', 'len of post:',len(post))
+    except Post.DoesNotExist:
+        return JsonResponse({"detail": "Not found."}, status=400)
+
+    serializer = PostSerializer(post, context={"request":request})
+    return JsonResponse({'results':serializer.data, 'did_like':did_like}, status=200)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def validate_nickname(request):
+    try:
+        data = request.data
+        candidate_nickname = data.get("nickname")
+        print('candidatenick', candidate_nickname)
+
+        obj = Profile.objects.get(nickname = candidate_nickname)
+        print('nickname TAKEN')
+
+        return JsonResponse({'result': False}, status = 200)
+    except Profile.DoesNotExist:
+        print('nickname USABLE')
+        return JsonResponse({'result': True}, status = 200)
+    except Exception as e:
+        return JsonResponse({"err":str(e)}, status=400)
+    
+
+@api_view(["POST"])    
+@permission_classes([IsAuthenticated])
+def update_community_profile(request):
+    user = request.user
+    data = request.data
+    new_nickname = data.get('nickname')
+    print(new_nickname, 'newnickname')
+    new_community_address = data['address']
+    profile = Profile.objects.get(user=user)
+    profile.nickname = new_nickname
+    profile.community_address = new_community_address
+    profile.save()
+    return JsonResponse({'results':'updated'},status=200)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def like_post(request):
+    print('likepost___')
+    try:
+        user = request.user
+        data = request.data
+        slug = data.get('slug', '')
+
+        post = Post.objects.get(slug=slug)
+        print('1')
+
+        # Check if the user has already liked the post
+        existing_like = PostLikes.objects.filter(post=post, liked_users=user.profile).first()
+        print('2')
+        if existing_like:
+            # User already liked → unlike
+            print('already liked, so will unlike')
+            existing_like.delete()
+            print('3')
+            return JsonResponse({'result': 'unliked'}, status=200)
+        else:
+            # Not liked yet → like it
+            print('not liked yet, will like it')
+            PostLikes.objects.create(post=post, liked_users=user.profile)
+            return JsonResponse({'result': 'liked'}, status=200)
+        
+    except Post.DoesNotExist:
+        return JsonResponse({'err': 'Post not found'}, status=400)
+    except Exception as e:
+        print('4')
+        return JsonResponse({'err': str(e)}, status=500)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def like_profile(request):
+    print('likeProfile')
+    try:
+        user = request.user
+        data = request.data
+        nickname = data.get('nickname', '')
+        profile = Profile.objects.get(nickname = nickname)
+
+
+        # Check if the user has already liked the profile
+        existing_like = UserLikes.objects.filter(user=user, liked_users=profile).first()
+        print('2')
+        if existing_like:
+            # User already liked → unlike
+            print('already liked, so will unlike')
+            existing_like.delete()
+            profile.likes -=1
+            profile.save()
+            print('3')
+            return JsonResponse({'result': 'unliked'}, status=200)
+        else:
+            # Not liked yet → like it
+            print('not liked yet, will like it')
+            UserLikes.objects.create(user=user, liked_users=profile)
+            profile.likes +=1
+            profile.save()
+            return JsonResponse({'result': 'liked'}, status=200)
+        
+    except Post.DoesNotExist:
+        return JsonResponse({'err': 'User not found'}, status=400)
+    except Exception as e:
+        print('4')
+        print(e)
+        return JsonResponse({'err': str(e)}, status=500)
+    
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def write_comment(request):
+    try:
+        print('add commnet!!!')
+        slug  = request.GET.get("slug", '')
+        user = request.user
+        data = request.data
+        content = data.get('content', '')
+        reply_to = data.get('parent_id', None)
+        target_post = Post.objects.get(slug=slug)
+
+
+
+        if reply_to == None:
+            PostComment.objects.create(user = user, post=target_post, content = content, reply_to=None)
+        else:
+            reply_to_post = PostComment.objects.get(id=reply_to)
+            PostComment.objects.create(user = user, post=target_post, content = content, reply_to=reply_to_post)
+        return JsonResponse({"result":'created'}, status=200)
+    except Post.DoesNotExist:
+        return JsonResponse({"err":'profile dne'}, status=400)
+    except Exception as e:
+        print('write comment err', e)
+        return JsonResponse({"err":str(e)}, status=500)
+
+
+@api_view(["GET"])
+def get_comments(request):
+    print("GET COMMENTS")
+    try:
+
+        # data = request.data
+        # slug = data.get('slug', '')
+        slug = request.GET.get("slug",'')
+        print('slug = ',slug)
+        target_post = Post.objects.get(slug=slug)
+        comments = (
+        PostComment.objects
+        .filter(post=target_post)
+        .select_related("user")           # user.username in 1 query
+        .prefetch_related("replies")      # to fetch all the children replies in one extra query (instead of doing comment.replies)
+        .order_by("-created_at")
+        )
+        comment_lookup = {c.id: c for c in comments}
+
+        roots = []
+        for c in comments:
+            c.depth = 1
+
+        for c in comments:
+            if c.reply_to_id:
+                parent = comment_lookup[c.reply_to_id]
+                c.depth = parent.depth + 1   
+                # access .replies cache without DB hit
+                parent.replies_cache = getattr(parent, "replies_cache", [])
+                parent.replies_cache.append(c)
+            else:
+                roots.append(c)
+
+        # Serializer sees replies via .replies_cache fallback
+        data = CommentTreeSerializer(roots, many=True).data
+        print("comment data: ",data)
+        return JsonResponse({"results" : data}, status = 200)
+    except Post.DoesNotExist:
+        return JsonResponse({"err":'profile dne'}, status=400)
+    except Exception as e:
+        print('err/////$$$', e)
+        return JsonResponse({"err":str(e)}, status=500)
+    
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def like_comment(request):
+    try:
+        data= request.data
+        user = request.user
+        target_commnet_id = data.get("id", "")
+        target_comment = PostComment.objects.get(id=target_commnet_id)
+
+        existing_like = CommentLikes.objects.filter(comment = target_comment, liked_users = user.profile).first()
+
+        if existing_like:
+            existing_like.delete()
+            target_comment.likes -=1
+            target_comment.save()
+            return JsonResponse({"msg":"unliked"},status=200)
+        else:
+            CommentLikes.objects.create(comment = target_comment, liked_users = user.profile)  
+            target_comment.likes +=1
+            target_comment.save()
+            return JsonResponse({"msg":"liked"},status=200)
+        
+    except Exception as e :
+        print(f"err occured! {e}")
+        return JsonResponse({"err": str(e)},status=500)
+
+@api_view(["GET"])
+def get_summarize_reliable(request):
+    print('get summary')
+    try:
+        reviews = Post.objects.filter(category = "review")
+
+        num_usrs = User.objects.count()
+        num_review = reviews.count()
+
+        JsonResponse({'results':{'reviews': num_review, "usrs":num_usrs}}, status = 200)
+    except Exception as e:
+        print(e)
+        JsonResponse({"err":str(e)},status=500)
+  
