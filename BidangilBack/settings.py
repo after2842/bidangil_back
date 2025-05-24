@@ -196,7 +196,7 @@ CELERY_TASK_QUEUES = {
 CELERY_BEAT_SCHEDULE = {
     "greet-every-2h": {
         "task": "usrinfo.tasks.run_and_update",
-        "schedule": crontab(minute='*/5'),  #,hour='*/2'
+        "schedule": crontab(minute=0,hour='*/2'),  #
         "options": {"queue": "delivery_update"},
     },
 }
