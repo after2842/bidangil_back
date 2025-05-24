@@ -20,7 +20,6 @@ from .tasks import process_websearch_task, generate_avatar
 from .helpers.exchange_rate import get_exchange_rate
 from .helpers.s3 import upload_png
 from .webhooks.stripewebhook import handle_stripe_webhook
-from .webhooks.trackingwebhook import karrio_webhook
 from django.conf import settings
 from rest_framework.parsers import MultiPartParser, FormParser
 import requests
