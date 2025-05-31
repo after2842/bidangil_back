@@ -1,17 +1,25 @@
 # Bidangil Backend
 
-Bidangil Backend powers a cross-border e-commerce and community platform.  
+Bidangil Backend powers a cross-border e-commerce (between Korea and the U.S) and community platform.  
 It handles everything from user accounts and order requests to payment processing, shipping logistics, admin workflows, order history, community posts, comments, and more.  
-The backend exposes REST APIs **and** real-time WebSocket channels so users and admins can automate the entire proxy-purchase process.
+The backend uses REST APIs **and** real-time WebSocket channels so users and admins can automate the entire proxy-purchase process.
 
 ## Motivation & Challenges
 
 Buying from Korean e-commerce sites is tricky for non-residents: most stores require a Korean credit card, a local phone number, and rarely offer international shipping.  
-**Bidangil** streamlines that experience by orchestrating the whole journey—from the user’s initial request to final delivery at their U.S. doorstep—while hiding the complexity of payments, currency exchange, customs, and tracking.
+**Bidangil** streamlines that experience by orchestrating the whole process: from the user’s initial request to final delivery at their U.S. doorsteps. The solution is focused on hiding the complexity of payments, currency exchange, customs, and tracking.
 
 Key challenges:
 
-* Coordinating a **multi-step workflow** (quote → item payment → purchase → delivery fee → shipping → delivery confirmation).
+The same order moves through two parallel lanes—**User** and **Admin**—while the backend automates all side-effects (Stripe sessions, email/SMS, package polling).
+
+| Lane   | Steps |
+|--------|-------|
+| **User** | 1. Request quote → 2. Pay for items → 3. Pay delivery fee → 4. Receive tracking info → 5. Package delivered |
+| **Admin** | 1. Approve quote (check restricted / prohibited items) → 2. Confirm item prices → 3. Confirm delivery fee → 4. Enter courier + tracking number |
+
+* **Automation glue:** At every milestone the backend fires a Django signal that<br> &nbsp;&nbsp;• creates or updates a **Stripe Checkout session**<br> &nbsp;&nbsp;• sends SMS + email to the right side (e.g., “Payment received,” “Delivery fee ready”)<br> &nbsp;&nbsp;• kicks off Celery tasks to **poll U.S. courier APIs** until the parcel is marked *delivered*.
+  
 * **Integrating third-party services**—Stripe for payments, carrier APIs for tracking, OpenAI for AI-generated avatars.
 * Maintaining a **responsive UX** for inherently long-running tasks (shipping updates, image generation) via asynchronous workers and WebSockets.
 
