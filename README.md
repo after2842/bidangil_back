@@ -11,7 +11,7 @@ Buying from Korean e-commerce sites is tricky for non-residents: most stores req
 
 Key challenges:
 
-The same order moves through two parallel lanes—**User** and **Admin**—while the backend automates all side-effects (Stripe sessions, email/SMS, package polling).
+The same order moves through two parallel lanes: **User** and **Admin**, while the backend automates bewteen steps (Stripe sessions, email/SMS, package polling...).
 
 | Lane   | Steps |
 |--------|-------|
@@ -21,7 +21,7 @@ The same order moves through two parallel lanes—**User** and **Admin**—while
 * **Automation glue:** At every milestone the backend fires a Django signal that<br> &nbsp;&nbsp;• creates or updates a **Stripe Checkout session**<br> &nbsp;&nbsp;• sends SMS + email to the right side (e.g., “Payment received,” “Delivery fee ready”)<br> &nbsp;&nbsp;• kicks off Celery tasks to **poll U.S. courier APIs** until the parcel is marked *delivered*.
   
 * **Integrating third-party services**—Stripe for payments, carrier APIs for tracking, OpenAI for AI-generated avatars.
-* Maintaining a **responsive UX** for inherently long-running tasks (shipping updates, image generation) via asynchronous workers and WebSockets.
+
 
 ## Highlights
 
@@ -38,19 +38,17 @@ The same order moves through two parallel lanes—**User** and **Admin**—while
 
 | Layer | Tooling |
 |-------|---------|
-| **Language / Framework** | Python 3.11 ↑ · Django 5.2 · Django REST Framework |
-| **Async & RT** | Celery 5.3 · Redis 7 (broker & channel layer) · Django Channels |
-| **DB** | MySQL 8 |
-| **Cloud & Integrations** | AWS S3 · Stripe API · FedEx/EMS APIs · OpenAI GPT-4o / image |
-| **Utilities** | django-celery-beat · django-cors-headers |
+| **Language / Framework** | Python 3.13 · Django 5.2 · Django REST Framework |
+| **Async & RT** | Celery 5.5 · Redis 7 (broker & channel layer) · Django Channels |
+| **DB** | MySQL |
+| **Cloud & Integrations** | AWS S3 · Stripe API · FedEx/EMS APIs · OpenAI GPT-4o-search / image-1 |
+| **Utilities** | django-celery-beat |
 
 ## Quick Start
 
 ```bash
 git clone https://github.com/your-org/bidangil_back.git
 cd bidangil_back
-python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # add DB credentials, Stripe & OpenAI keys
 python manage.py migrate
 python manage.py runserver
