@@ -19,7 +19,7 @@ Buying from Korean e-commerce sites is tricky for non-residents: most stores req
 &nbsp;&nbsp;• fires SMS + email to the right party (e.g. “Payment received”, “Delivery fee ready”)  
 &nbsp;&nbsp;• launches Celery jobs that **poll U.S. courier APIs** until the parcel is marked *delivered*.
 
-### Community Module — why a forum on a proxy-purchase site?
+### Community Module
 While managing a pet shop I learned a simple truth: **the longer people linger, the more they spend**.  
 My target users—Korean immigrants and K-culture fans—already share interests, so I embedded a lightweight social space as both a *playground* and a *soft funnel* back into purchases.
 
