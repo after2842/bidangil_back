@@ -33,9 +33,9 @@ My target users—Korean immigrants and K-culture fans—already share interests
 #### Extra technical hurdles
 | Challenge | Solution |
 |-----------|----------|
-| GPT image creation takes ~30 s—too long for a request thread | Off-load to **Celery**; push the result over **WebSocket (Django Channels)** so the avatar pops in UI the moment it’s ready. |
+| GPT image creation takes ~30sec (too long for a request thread) | Off-load to **Celery**; push the result over **WebSocket (Django Channels)** so the avatar pops in UI the moment it’s ready. |
 | Deep reply chains (comment → reply → reply…) | Custom **recursive serializer** with pre-cached `replies_cache` list; loads N comments in **O(N)** with only two DB queries. |
-| Realtime likes counter | Redis pub/sub broadcasts like events; React state updates instantly without page refresh. |
+
 
 These additions turn Bidangil into more than a checkout page—they create stickiness, community, and ultimately higher conversion.
 
