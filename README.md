@@ -7,7 +7,7 @@ The backend uses REST APIs **and** real-time WebSocket channels so users and adm
 ## Motivation & Challenges
 
 Buying from Korean e-commerce sites is tricky for non-residents: most stores require a Korean credit card, a local phone number, and rarely offer international shipping.  
-**Bidangil** streamlines that experience by orchestrating the whole process: from the user’s initial request to final delivery at their U.S. doorsteps. The solution is focused on hiding the complexity of payments, currency exchange, customs, and tracking.
+**Bidangil** streamlines that experience by orchestrating the whole process. 
 
 Key challenges:
 
