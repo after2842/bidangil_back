@@ -6,21 +6,40 @@ The backend uses REST APIs **and** real-time WebSocket channels so users and adm
 
 ## Motivation & Challenges
 
-Buying from Korean e-commerce sites is tricky for non-residents: most stores require a Korean credit card, a local phone number, and rarely offer international shipping.  
-**Bidangil** streamlines that experience by orchestrating the whole process. 
+### Cross-Border Purchasing
+Buying from Korean e-commerce sites is tricky for non-residents: most stores require a Korean credit card, a local phone number, and rarely offer international shipping. **Bidangil** streamlines that experience by orchestrating the whole process.
 
-Key challenges:
+| Lane | Steps |
+|------|-------|
+| **User**  | 1 Request quote → 2 Pay for items → 3 Pay delivery fee → 4 Receive tracking info → 5 Package delivered |
+| **Admin** | 1 Approve quote (screen restricted items) → 2 Confirm item prices → 3 Confirm delivery fee → 4 Enter courier & tracking |
 
-The same order moves through two parallel lanes: **User** and **Admin**, while the backend automates bewteen steps (Stripe sessions, email/SMS, package polling...).
+*Automation glue* — at each milestone a Django signal  
+&nbsp;&nbsp;• creates/updates a **Stripe Checkout session**  
+&nbsp;&nbsp;• fires SMS + email to the right party (e.g. “Payment received”, “Delivery fee ready”)  
+&nbsp;&nbsp;• launches Celery jobs that **poll U.S. courier APIs** until the parcel is marked *delivered*.
 
-| Lane   | Steps |
-|--------|-------|
-| **User** | 1. Request quote → 2. Pay for items → 3. Pay delivery fee → 4. Receive tracking info → 5. Package delivered |
-| **Admin** | 1. Approve quote (check restricted / prohibited items) → 2. Confirm item prices → 3. Confirm delivery fee → 4. Enter courier + tracking number |
+### Community Module — why a forum on a proxy-purchase site?
+While managing a pet shop I learned a simple truth: **the longer people linger, the more they spend**.  
+My target users—Korean immigrants and K-culture fans—already share interests, so I embedded a lightweight social space as both a *playground* and a *soft funnel* back into purchases.
 
-* **Automation glue:** At every milestone the backend fires a Django signal that<br> &nbsp;&nbsp;• creates or updates a **Stripe Checkout session**<br> &nbsp;&nbsp;• sends SMS + email to the right side (e.g., “Payment received,” “Delivery fee ready”)<br> &nbsp;&nbsp;• kicks off Celery tasks to **poll U.S. courier APIs** until the parcel is marked *delivered*.
-  
-* **Integrating third-party services**—Stripe for payments, carrier APIs for tracking, OpenAI for AI-generated avatars.
+| Community Features | Why it matters |
+|--------------------|----------------|
+| **Location reveal** (state / county badges) | Sparks local meet-ups & offline trades. |
+| **Avatar generator** (fun personality quiz → GPT image) | Adds “wow” factor & personal identity; increases return visits. |
+| **Per-avatar & per-post likes** | Simple feedback loop; users can see who liked them. |
+| **Merged Reviews page** | Store reviews live inside the community feed, exposing newcomers to social proof. |
+
+#### Extra technical hurdles
+| Challenge | Solution |
+|-----------|----------|
+| GPT image creation takes ~30 s—too long for a request thread | Off-load to **Celery**; push the result over **WebSocket (Django Channels)** so the avatar pops in UI the moment it’s ready. |
+| Deep reply chains (comment → reply → reply…) | Custom **recursive serializer** with pre-cached `replies_cache` list; loads N comments in **O(N)** with only two DB queries. |
+| Realtime likes counter | Redis pub/sub broadcasts like events; React state updates instantly without page refresh. |
+
+These additions turn Bidangil into more than a checkout page—they create stickiness, community, and ultimately higher conversion.
+
+
 
 
 ## Highlights
@@ -29,8 +48,8 @@ The same order moves through two parallel lanes: **User** and **Admin**, while t
   Inline models + a bespoke `save_formset` override let staff update item prices once and trigger a single Stripe session, preventing duplicate charges.
 * **Asynchronous tasks & real-time push**  
   Celery handles heavy work (shipping polls, avatar generation); Django Channels pushes instant updates to the frontend when tasks finish.
-* **Seamless integrations**  
-  Stripe (item & delivery payments), AWS S3 (media), FedEx/EMS tracking APIs, and OpenAI (GPT-4o, image generation) are wired in behind clean service layers.
+* **API integrations**  
+  Stripe (item & delivery payments), AWS S3 (boto 3), FedEx/EMS tracking APIs, and OpenAI (GPT-4o, image generation) are wired in behind clean service layers.
 * **Robust architecture**  
   Built on Django 5.2 + Daphne (ASGI). DRF provides a clean API surface, and comprehensive models cover orders, profiles, posts, comments, and likes. MySQL backs persistent data.
 
