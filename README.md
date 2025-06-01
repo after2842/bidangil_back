@@ -14,7 +14,7 @@ Buying from Korean e-commerce sites is tricky for non-residents: most stores req
 | **User**  | 1 Request quote → 2 Pay for items → 3 Pay delivery fee → 4 Receive tracking info → 5 Package delivered |
 | **Admin** | 1 Approve quote (screen restricted items) → 2 Confirm item prices → 3 Confirm delivery fee → 4 Enter courier & tracking |
 
-*Automation glue* — at each milestone a Django signal  
+*Automation glue* — at each step a Django signal(listen)  
 &nbsp;&nbsp;• creates/updates a **Stripe Checkout session**  
 &nbsp;&nbsp;• fires SMS + email to the right party (e.g. “Payment received”, “Delivery fee ready”)  
 &nbsp;&nbsp;• launches Celery jobs that **poll U.S. courier APIs** until the parcel is marked *delivered*.
