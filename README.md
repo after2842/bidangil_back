@@ -1,6 +1,6 @@
 # Bidangil Backend
 
-Bidangil Backend powers a cross-border e-commerce (between Korea and the U.S) and community platform.  
+Bidangil Backend is a backend of a web app. It powers a cross-border e-commerce (between Korea and the U.S) and community platform.  
 It handles everything from user accounts and order requests to payment processing, shipping logistics, admin workflows, order history, community posts, comments, and more.  
 The backend uses REST APIs **and** real-time WebSocket channels so users and admins can automate the entire proxy-purchase process.
 
