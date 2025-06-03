@@ -73,7 +73,7 @@ python manage.py migrate
 python manage.py runserver
 
 
-
+<code>
 erDiagram
     %% ─────────── Tables ───────────
     USER {
@@ -193,4 +193,4 @@ erDiagram
     PROFILE  ||--o{ COMMENTLIKES         : comment_likes
     POST     ||--o{ POSTLIKES            : liked_by
     POSTCOMMENT ||--o{ COMMENTLIKES      : liked_by
-
+</code>
