@@ -62,17 +62,6 @@ These additions turn Bidangil into more than a checkout page—they create stick
 | **DB** | MySQL |
 | **Cloud & Integrations** | AWS S3 · Stripe API · FedEx/EMS APIs · OpenAI GPT-4o-search / image-1 |
 | **Utilities** | django-celery-beat |
-
-## Quick Start
-
-```bash
-git clone https://github.com/your-org/bidangil_back.git
-cd bidangil_back
-pip install -r requirements.txt
-python manage.py migrate
-python manage.py runserver
-
-
 <code>
 erDiagram
     %% ─────────── Tables ───────────
@@ -194,3 +183,14 @@ erDiagram
     POST     ||--o{ POSTLIKES            : liked_by
     POSTCOMMENT ||--o{ COMMENTLIKES      : liked_by
 </code>
+## Quick Start
+
+```bash
+git clone https://github.com/your-org/bidangil_back.git
+cd bidangil_back
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py runserver
+
+
+
