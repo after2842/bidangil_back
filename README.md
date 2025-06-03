@@ -71,3 +71,126 @@ cd bidangil_back
 pip install -r requirements.txt
 python manage.py migrate
 python manage.py runserver
+
+
+
+erDiagram
+    %% ─────────── Tables ───────────
+    USER {
+        int id PK
+        string username
+    }
+
+    PROFILE {
+        int id PK
+        int user_id FK
+    }
+
+    AVATAR {
+        int id PK
+        int profile_id FK
+    }
+
+    INPROGRESSORDER {
+        int id PK
+        int user_id FK
+    }
+
+    INPROGRESSORDERITEM {
+        int id PK
+        int order_id FK
+    }
+
+    INPROGRESSORDERSTEPS {
+        int order_id PK FK
+    }
+
+    PAYMENT {
+        int id PK
+        int order_id FK
+    }
+
+    DELIVERY {
+        int id PK
+        int order_id FK
+    }
+
+    DELIVERYSTATUS {
+        int id PK
+        int delivery_id FK
+    }
+
+    PASTORDER {
+        int id PK
+        int user_id FK
+    }
+
+    PASTORDERITEM {
+        int id PK
+        int order_id FK
+    }
+
+    EMAILVERIFICATION {
+        int id PK
+    }
+
+    POST {
+        int id PK
+        int user_id FK
+    }
+
+    POSTIMAGE {
+        int id PK
+        int post_id FK
+    }
+
+    POSTCOMMENT {
+        int id PK
+        int user_id FK
+        int post_id FK
+        int reply_to_id FK
+    }
+
+    USERLIKES {
+        int id PK
+        int user_id FK
+        int liked_users_id FK
+    }
+
+    POSTLIKES {
+        int id PK
+        int post_id FK
+        int liked_users_id FK
+    }
+
+    COMMENTLIKES {
+        int id PK
+        int comment_id FK
+        int liked_users_id FK
+    }
+
+    FOO {
+        int id PK
+    }
+
+    %% ────────── Relationships ─────────
+    USER     ||--|| PROFILE              : has
+    PROFILE  ||--|| AVATAR               : has
+    USER     ||--o{ INPROGRESSORDER      : places
+    INPROGRESSORDER ||--o{ INPROGRESSORDERITEM : contains
+    INPROGRESSORDER ||--|| INPROGRESSORDERSTEPS : "1-to-1"
+    INPROGRESSORDER ||--|| PAYMENT        : "1-to-1"
+    INPROGRESSORDER ||--|| DELIVERY       : "1-to-1"
+    DELIVERY ||--o{ DELIVERYSTATUS        : updates
+    USER     ||--o{ PASTORDER            : history
+    PASTORDER ||--o{ PASTORDERITEM       : contains
+    USER     ||--o{ POST                 : writes
+    POST     ||--o{ POSTIMAGE            : has
+    POST     ||--o{ POSTCOMMENT          : receives
+    POSTCOMMENT ||--o{ POSTCOMMENT       : replies
+    PROFILE  ||--o{ USERLIKES            : profile_likes
+    PROFILE  ||--o{ POSTLIKES            : post_likes
+    PROFILE  ||--o{ COMMENTLIKES         : comment_likes
+    POST     ||--o{ POSTLIKES            : liked_by
+    POSTCOMMENT ||--o{ COMMENTLIKES      : liked_by
+
