@@ -21,38 +21,31 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 # webhook: whsec_BYfhBcSfSZQryHAiTMuAFj1kD6aKTB9p
 from pathlib import Path
 from celery.schedules import crontab
-GOOGLE_APP_PW = 'qjqb hvcr rrdr cgth'
-SECRET_KEY = 'django-insecure-d^9soj8_40+y8*5iu*4#&50m0@dtxy7uui_7amgi$3tgrf)h8a'
-STRIPE_API = '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'
-# SECURITY WARNING: don't run with debug turned on in production!
-STRPIE_WEBHOOK_SEC = 'whsec_BYfhBcSfSZQryHAiTMuAFj1kD6aKTB9p'
+GOOGLE_APP_PW = 
+SECRET_KEY = 
+STRIPE_API = 
+STRPIE_WEBHOOK_SEC = 
 DEBUG = True
-GOOGLE_API= 'AIzaSyBDIYy1cEoJIzN4VacqPuC8pV66I1wjVzg'
-GPT_SECRET = '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'
-ALLOWED_HOSTS = ['54.176.252.155','localhost', '127.0.0.1', 'bidangil.co']
+GOOGLE_API= 
+GPT_SECRET = 
+ALLOWED_HOSTS = 
 
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'support@bidangil.co'
-EMAIL_HOST_PASSWORD = 'qjqb hvcr rrdr cgth'  # Not your Gmail password!
+EMAIL_BACKEND =
+EMAIL_HOST =
+EMAIL_PORT = 
+EMAIL_USE_TLS = 
+EMAIL_HOST_USER =
+EMAIL_HOST_PASSWORD = 
 
 
-# EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-AWS_ACCESS_KEY_ID='AKIASVLKCS3CP3DWUM4Q'
-AWS_SECRET_ACCESS_KEY = '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'
-SMS_API_KEY = 'KEY01968D80E61D85013F5096961A4DA7B4_wFWyom5wu0bsQAFZnfMs7h'
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
+
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY = 
+SMS_API_KEY = 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-# EMAIL_BACKEND = 'django_ses.SESBackend'
-# AWS_SES_REGION_NAME = 'us-west-1'  # Replace with your SES region
-# AWS_SES_REGION_ENDPOINT = 'email.us-west-1.amazonaws.com'  # Replace with your SES endpoint
-# DEFAULT_FROM_EMAIL = '비단길 알림 <support@bidangil.co>'
 
-# Application definition
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -79,9 +72,9 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
-# Allow all origins (for development purposes only)
+
 CORS_ALLOW_ALL_ORIGINS = True
-# Allow required HTTP methods explicitly
+
 CORS_ALLOW_METHODS = [
     'GET',
     'POST',
@@ -97,9 +90,7 @@ CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
     "http://54.176.252.155"
 ]
-# CORS_ALLOWED_ORIGINS = ['http://localhost:3000',   "http://54.176.252.155:8000"]  # or your frontend origin
 
-# CSRF_TRUSTED_ORIGINS = ['http://localhost:3000',   "http://54.176.252.155:8000"]
 
 CORS_ALLOW_CREDENTIALS = True
 ROOT_URLCONF = 'BidangilBack.urls'
@@ -182,8 +173,8 @@ CELERY_BROKER_URL = "redis://127.0.0.1:6379/0"
 CELERY_RESULT_BACKEND = "redis://127.0.0.1:6379/1"
 
 # Time & reliability
-CELERY_TIMEZONE = "UTC"           # inherits Django TIME_ZONE if omitted
-CELERY_TASK_ACKS_LATE = True      # ack only *after* the task finishes
+CELERY_TIMEZONE = "UTC"           
+CELERY_TASK_ACKS_LATE = True     
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_TIME_LIMIT = 300
 
