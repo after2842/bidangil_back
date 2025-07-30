@@ -59,7 +59,7 @@ These additions turn Bidangil into more than a checkout page—they create stick
 |-------|---------|
 | **Language / Framework** | Python 3.13 · Django 5.2 · Django REST Framework |
 | **Async & RT** | Celery 5.5 · Redis 7 (broker & channel layer) · Django Channels |
-| **DB** | MySQL |
+| **DB** | PostgreSQL |
 | **Cloud & Integrations** | AWS S3 · Stripe API · FedEx/EMS APIs · OpenAI GPT-4o-search / image-1 |
 | **Utilities** | django-celery-beat |
 
