@@ -92,12 +92,8 @@ def verify_code(request):
     data = json.loads(request.body)
     email = data['email']
     code = data['code']
-    # print(f"###########{email}####")
-    # print(f"###########{code}####")
+
     try:
-        # print("---- All EmailVerification records ----")
-        # for obj in EmailVerification.objects.all():
-        #     print(f"email: {obj.email}, code: {obj.code}, verified: {obj.isVerified}, created_at: {obj.created_at}")
 
         record = EmailVerification.objects.get(email=email, code=code)
         print(f"created_at: {record.created_at} email:{record.email}")
